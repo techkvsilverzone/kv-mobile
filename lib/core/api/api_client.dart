@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../auth/auth_session.dart';
 import '../config/env.dart';
 import '../storage/secure_token_storage.dart';
 import 'api_exception.dart';
@@ -77,3 +79,15 @@ class ApiClient {
     }
   }
 }
+
+final dioProvider = Provider<Dio>((ref) {
+  final tokenStorage = ref.watch(secureTokenStorageProvider);
+  return buildDio(
+    tokenStorage: tokenStorage,
+    onUnauthorized: () => ref.read(authSessionProvider.notifier).clearSession(),
+  );
+});
+
+final apiClientProvider = Provider<ApiClient>((ref) {
+  return ApiClient(ref.watch(dioProvider));
+});
