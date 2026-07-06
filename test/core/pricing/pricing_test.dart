@@ -54,6 +54,10 @@ void main() {
       expect(resolveChargeAmount(null, 1000), 0);
       expect(resolveChargeAmount(const ProductCharge(type: ChargeType.amount, value: -5), 1000), 0);
     });
+
+    test('treats a non-finite charge value as zero', () {
+      expect(resolveChargeAmount(const ProductCharge(type: ChargeType.amount, value: double.nan), 1000), 0);
+    });
   });
 
   group('computeProductPricing', () {
@@ -125,6 +129,23 @@ void main() {
       expect(result.isFixedPrice, isTrue);
       expect(result.computed, isFalse);
       expect(result.preGstPrice, 4999);
+    });
+
+    test('keeps the listed price when the matched rate is exactly zero', () {
+      final zeroRates = [_rate(purity: '925', ratePerGram: 0)];
+      final result = computeProductPricing(
+        const ProductPricingInput(
+          price: 2500,
+          isFixedPrice: false,
+          weight: '10 g',
+          weightInGrams: 10,
+          purity: '925',
+          makingCharge: ProductCharge(type: ChargeType.percentage, value: 12),
+        ),
+        zeroRates,
+      );
+      expect(result.computed, isFalse);
+      expect(result.preGstPrice, 2500);
     });
 
     test('falls back to product.price when there is no rate or weight', () {

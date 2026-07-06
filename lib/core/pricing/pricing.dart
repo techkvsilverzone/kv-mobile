@@ -57,7 +57,7 @@ MetalRate? matchSilverRate(List<MetalRate> rates, String? purity) {
 }
 
 double resolveChargeAmount(ProductCharge? charge, double base) {
-  if (charge == null || charge.value < 0) return 0;
+  if (charge == null || !charge.value.isFinite || charge.value < 0) return 0;
   return charge.type == ChargeType.amount ? charge.value : (base * charge.value) / 100;
 }
 
@@ -125,7 +125,7 @@ ProductPriceBreakdown computeProductPricing(
   final grams = gramsOverride ?? product.weightInGrams ?? parseGrams(product.weight);
   final ratePerGram = matchSilverRate(rates, product.purity)?.ratePerGram;
 
-  if (grams == null || grams <= 0 || ratePerGram == null || !hasConfiguredCharge) {
+  if (grams == null || grams <= 0 || ratePerGram == null || ratePerGram <= 0 || !hasConfiguredCharge) {
     return fallback;
   }
 
