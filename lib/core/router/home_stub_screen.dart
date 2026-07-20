@@ -37,12 +37,18 @@ class HomeStubScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Shopping is not built yet — browse, cart and checkout arrive '
-                'with the Shop feature.',
+                'Category tiles and featured products arrive with the Home '
+                'feature. Browsing and product detail are ready now.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
-              FilledButton.tonalIcon(
+              FilledButton.icon(
+                onPressed: () => context.push('/shop'),
+                icon: const Icon(Icons.storefront_outlined),
+                label: const Text('Browse products'),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
                 onPressed: () => context.push('/profile'),
                 icon: const Icon(Icons.person_outline),
                 label: const Text('My profile'),

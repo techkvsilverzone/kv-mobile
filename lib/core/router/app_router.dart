@@ -9,6 +9,8 @@ import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/profile_screen.dart';
 import '../../features/auth/presentation/signup_screen.dart';
+import '../../features/catalog/presentation/product_detail_screen.dart';
+import '../../features/catalog/presentation/shop_screen.dart';
 import '../auth/auth_session.dart';
 import 'home_stub_screen.dart';
 
@@ -109,6 +111,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ForgotPasswordScreen(),
       ),
       GoRoute(path: '/home', builder: (context, state) => const HomeStubScreen()),
+      GoRoute(path: '/shop', builder: (context, state) => const ShopScreen()),
+      GoRoute(
+        path: '/product/:id',
+        builder: (context, state) =>
+            ProductDetailScreen(productId: state.pathParameters['id']!),
+      ),
       GoRoute(
         path: '/profile',
         builder: (context, state) => const ProfileScreen(),
