@@ -45,8 +45,9 @@ repo directory keeps the hyphen. Bundle/application ID: `com.kvsilverzone.kv_sil
 Feature-first. `lib/core/` holds cross-cutting concerns with **no** feature UI logic;
 `lib/features/<name>/` folders each get `presentation/` (screens/widgets), `application/` (Riverpod
 providers), `data/` (repository calling `core/api`), and must consume `core/` only through the
-providers and classes below. `features/auth/` is built and is the reference for the layering;
-`home`, `shop`, `product`, `cart`, `checkout`, and `orders` are not started.
+providers and classes below. Built: `features/auth/`, `features/catalog/` (shop + product detail),
+`features/cart/`, `features/checkout/`, `features/orders/`. Not started: a real Home (category tiles
+and featured products) — `/home` is still a stub linking to `/shop`.
 
 **Auth/session is the spine of the app.** The chain is:
 
@@ -113,6 +114,29 @@ The Phase 1 spec predates the code and gets some of this wrong. These were confi
 - **Auth is Bearer-only for this app.** The server checks the `Authorization` header *before* the
   cookie despite a comment claiming otherwise. Emit exactly one space after `Bearer` — the parser
   splits on `' '` and a double space yields a 401. No refresh endpoint exists; a 401 means re-login.
+- **The server cart cannot hold a variant.** `POST /cart/items` takes only `{productId, quantity}`
+  and re-derives weight and price from the base product, so a "30 g" selection is lost on sync.
+  The client cart is therefore authoritative and persisted locally; the server cart is a coarse
+  backup only. `DELETE /cart/items/:id` takes the **productId**, not a line id.
+- **The customer order list is `GET /orders/me`.** A bare `GET /orders` does not exist for
+  customers and will 404.
+- **`variantWeight` per line item is the only way a variant reaches pricing** on
+  `/payments/create-order` and `POST /orders`. The variant *label* is never persisted.
+- **`POST /payments/create-order` returns a `breakdown`** with the authoritative totals. Show those
+  — never client math. The web requests this and discards it, so its customers can be charged an
+  amount that differs from what was on screen.
+- **`/payments/verify` expects camelCase** (`razorpayOrderId`…) while the Razorpay SDK reports
+  snake_case. It can also return **HTTP 200 with `success: false`** — treat that as a failure.
+- **COD is contradictory.** `/payments/verify` hard-rejects it ("Cash on Delivery is no longer
+  available"), but `POST /orders` still defaults `paymentMethod` to `cod` with no such check.
+  This app does not offer COD; confirm the intended behaviour before enabling it.
+- **There is no usable stale-rate price lock.** `GET /admin/rate-status` requires admin/staff, so a
+  customer token gets 403, and `POST /orders` never rejects on stale rates — it silently prices
+  from the most recent rate of any age. The app cannot block checkout; it compares its local
+  estimate against the server breakdown and flags a difference instead.
+- **`POST /orders` trusts a client-sent `status`.** Never send one; omit it and get `Pending`.
+- **`totalWithTax` omits the discount** and `giftWrapFee` is never added to the total. Display
+  `grandTotal` (= `totalAmount`) as the amount charged.
 
 **Pricing is a deliberate port, kept in lockstep with two other implementations.**
 [lib/core/pricing/pricing.dart](lib/core/pricing/pricing.dart) mirrors

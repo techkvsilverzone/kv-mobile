@@ -193,6 +193,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const Divider(),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.receipt_long_outlined),
+                    title: const Text('My orders'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: busy ? null : () => context.push('/orders'),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.location_on_outlined),
                     title: const Text('Address book'),
                     trailing: const Icon(Icons.chevron_right),

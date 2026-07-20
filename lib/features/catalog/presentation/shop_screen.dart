@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/pricing/pricing.dart';
+import '../../cart/application/cart_controller.dart';
 import '../application/catalog_providers.dart';
 import '../data/catalog_repository.dart';
 import 'widgets/product_card.dart';
@@ -85,6 +86,20 @@ class _ShopScreenState extends ConsumerState<ShopScreen> {
       appBar: AppBar(
         title: const Text('Shop'),
         actions: [
+          Consumer(
+            builder: (context, ref, _) {
+              final count = ref.watch(cartCountProvider);
+              return Badge(
+                isLabelVisible: count > 0,
+                label: Text('$count'),
+                child: IconButton(
+                  icon: const Icon(Icons.shopping_bag_outlined),
+                  tooltip: 'Cart',
+                  onPressed: () => context.push('/cart'),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.person_outline),
             tooltip: 'My profile',

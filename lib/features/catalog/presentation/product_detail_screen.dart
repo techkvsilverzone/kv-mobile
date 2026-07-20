@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/format/currency.dart';
 import '../../../core/pricing/pricing.dart';
+import '../../cart/application/cart_controller.dart';
 import '../application/catalog_providers.dart';
 import '../data/models/product.dart';
 import 'widgets/product_image.dart';
@@ -173,14 +175,26 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
-                // Cart is not built yet; the button is present but honest
-                // rather than silently doing nothing.
                 onPressed: product.inStock
-                    ? () => ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Cart arrives with the next feature slice.'),
+                    ? () {
+                        // The price banked into the cart line is the one the
+                        // customer is looking at, for the variant they picked —
+                        // the server re-prices at checkout regardless.
+                        ref.read(cartProvider.notifier).add(
+                              product,
+                              unitPrice: pricing.preGstPrice,
+                              variant: selected,
+                            );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('Added to cart'),
+                            action: SnackBarAction(
+                              label: 'View cart',
+                              onPressed: () => context.push('/cart'),
+                            ),
                           ),
-                        )
+                        );
+                      }
                     : null,
                 icon: const Icon(Icons.shopping_bag_outlined),
                 label: const Text('Add to cart'),

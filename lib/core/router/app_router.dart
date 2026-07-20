@@ -9,8 +9,12 @@ import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/profile_screen.dart';
 import '../../features/auth/presentation/signup_screen.dart';
+import '../../features/cart/presentation/cart_screen.dart';
 import '../../features/catalog/presentation/product_detail_screen.dart';
 import '../../features/catalog/presentation/shop_screen.dart';
+import '../../features/checkout/presentation/checkout_screen.dart';
+import '../../features/orders/presentation/order_detail_screen.dart';
+import '../../features/orders/presentation/orders_screen.dart';
 import '../auth/auth_session.dart';
 import 'home_stub_screen.dart';
 
@@ -116,6 +120,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/product/:id',
         builder: (context, state) =>
             ProductDetailScreen(productId: state.pathParameters['id']!),
+      ),
+      GoRoute(path: '/cart', builder: (context, state) => const CartScreen()),
+      GoRoute(path: '/checkout', builder: (context, state) => const CheckoutScreen()),
+      GoRoute(path: '/orders', builder: (context, state) => const OrdersScreen()),
+      GoRoute(
+        path: '/orders/:id',
+        builder: (context, state) =>
+            OrderDetailScreen(orderId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/profile',
