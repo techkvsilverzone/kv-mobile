@@ -1,42 +1,113 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../features/auth/data/auth_repository.dart';
+import '../../features/auth/data/models/user.dart';
+import '../api/api_exception.dart';
 import '../storage/secure_storage_client.dart';
 import '../storage/secure_token_storage.dart';
 
 class AuthSessionState {
-  const AuthSessionState({required this.isAuthenticated, required this.isRestoring});
+  const AuthSessionState({
+    required this.user,
+    required this.isRestoring,
+    this.restoreError,
+  });
 
-  final bool isAuthenticated;
+  /// The signed-in user, or null when signed out. A stored token alone is not
+  /// enough to be authenticated — it must have been validated against
+  /// `GET /users/me`, because the server has no refresh endpoint and a 30-day
+  /// JWT can be revoked or belong to a since-deleted account.
+  final User? user;
+
+  /// True until the cold-start restore settles. Also stays true when restore
+  /// fails for a *recoverable* reason (see [restoreError]) so the router keeps
+  /// the user on the splash screen instead of bouncing them to login while a
+  /// perfectly good token sits in storage.
   final bool isRestoring;
 
-  static const initial = AuthSessionState(isAuthenticated: false, isRestoring: true);
+  /// Set when restore failed because the server was unreachable — not because
+  /// the token was rejected. The splash screen surfaces this with a retry.
+  final String? restoreError;
 
-  AuthSessionState copyWith({bool? isAuthenticated, bool? isRestoring}) => AuthSessionState(
-        isAuthenticated: isAuthenticated ?? this.isAuthenticated,
+  bool get isAuthenticated => user != null;
+
+  static const initial = AuthSessionState(user: null, isRestoring: true);
+
+  AuthSessionState copyWith({
+    User? user,
+    bool? isRestoring,
+    String? restoreError,
+    bool clearUser = false,
+    bool clearError = false,
+  }) =>
+      AuthSessionState(
+        user: clearUser ? null : (user ?? this.user),
         isRestoring: isRestoring ?? this.isRestoring,
+        restoreError: clearError ? null : (restoreError ?? this.restoreError),
       );
 }
 
 class AuthSessionController extends StateNotifier<AuthSessionState> {
-  AuthSessionController(this._tokenStorage) : super(AuthSessionState.initial);
+  AuthSessionController(this._ref, this._tokenStorage) : super(AuthSessionState.initial);
 
+  /// Read lazily rather than injected: [AuthRepository] is built on top of the
+  /// Dio client, whose 401 interceptor calls back into this controller.
+  /// Resolving it at construction time would close that loop into a circular
+  /// provider dependency.
+  final Ref _ref;
   final SecureTokenStorage _tokenStorage;
 
+  AuthRepository get _repo => _ref.read(authRepositoryProvider);
+
+  /// Cold start: a stored token is only trusted after `GET /users/me` confirms
+  /// it. Mirrors the web's `initAuth`, but distinguishes "token rejected" from
+  /// "server unreachable" — the web logs you out for both, which silently drops
+  /// a valid session whenever the network hiccups.
   Future<void> restoreSession() async {
+    state = state.copyWith(isRestoring: true, clearError: true);
+
     final token = await _tokenStorage.readToken();
-    state = state.copyWith(
-      isAuthenticated: token != null && token.isNotEmpty,
-      isRestoring: false,
-    );
+    if (token == null || token.isEmpty) {
+      state = const AuthSessionState(user: null, isRestoring: false);
+      return;
+    }
+
+    try {
+      final user = await _repo.getMe();
+      state = AuthSessionState(user: user, isRestoring: false);
+    } on AuthException {
+      await _tokenStorage.clearToken();
+      state = const AuthSessionState(user: null, isRestoring: false);
+    } on ApiException catch (e) {
+      // Keep the token — the session is probably still valid; we just could not
+      // confirm it. Staying "restoring" holds the router on /splash.
+      state = state.copyWith(clearUser: true, isRestoring: true, restoreError: e.message);
+    }
   }
 
-  Future<void> setToken(String token) async {
+  /// Called after a successful login/signup/OTP verify, where the user object
+  /// arrives alongside the token so no extra round trip is needed.
+  Future<void> setSession({required User user, required String token}) async {
     await _tokenStorage.saveToken(token);
-    state = state.copyWith(isAuthenticated: true, isRestoring: false);
+    state = AuthSessionState(user: user, isRestoring: false);
   }
 
+  /// Replaces the cached user after a profile edit without touching the token.
+  void updateUser(User user) {
+    if (state.user == null) return;
+    state = state.copyWith(user: user);
+  }
+
+  /// Local-only teardown. Invoked by the Dio 401 interceptor, so it must not
+  /// itself issue a request or a rejected call would recurse.
   Future<void> clearSession() async {
     await _tokenStorage.clearToken();
-    state = state.copyWith(isAuthenticated: false, isRestoring: false);
+    state = const AuthSessionState(user: null, isRestoring: false);
+  }
+
+  /// User-initiated sign out: tell the server, then clear locally regardless.
+  Future<void> signOut() async {
+    await _repo.logout();
+    await clearSession();
   }
 }
 
@@ -45,5 +116,10 @@ final secureTokenStorageProvider = Provider<SecureTokenStorage>((ref) {
 });
 
 final authSessionProvider = StateNotifierProvider<AuthSessionController, AuthSessionState>((ref) {
-  return AuthSessionController(ref.watch(secureTokenStorageProvider));
+  return AuthSessionController(ref, ref.watch(secureTokenStorageProvider));
+});
+
+/// Convenience for widgets that only care about who is signed in.
+final currentUserProvider = Provider<User?>((ref) {
+  return ref.watch(authSessionProvider).user;
 });
