@@ -18,7 +18,11 @@ const _searchDebounce = Duration(milliseconds: 400);
 const _loadMoreExtent = 400.0;
 
 class ShopScreen extends ConsumerStatefulWidget {
-  const ShopScreen({super.key});
+  const ShopScreen({super.key, this.initialCategory});
+
+  /// When set (e.g. from a home category tile), the list opens pre-filtered to
+  /// this category instead of showing everything.
+  final String? initialCategory;
 
   @override
   ConsumerState<ShopScreen> createState() => _ShopScreenState();
@@ -33,7 +37,12 @@ class _ShopScreenState extends ConsumerState<ShopScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    Future.microtask(() => ref.read(productListProvider.notifier).refresh());
+    final category = widget.initialCategory;
+    Future.microtask(() => ref.read(productListProvider.notifier).applyFilters(
+          category == null || category.isEmpty
+              ? const ProductFilters()
+              : ProductFilters(categories: [category]),
+        ));
   }
 
   @override

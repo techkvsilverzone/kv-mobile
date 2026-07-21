@@ -13,10 +13,10 @@ import '../../features/cart/presentation/cart_screen.dart';
 import '../../features/catalog/presentation/product_detail_screen.dart';
 import '../../features/catalog/presentation/shop_screen.dart';
 import '../../features/checkout/presentation/checkout_screen.dart';
+import '../../features/home/presentation/home_screen.dart';
 import '../../features/orders/presentation/order_detail_screen.dart';
 import '../../features/orders/presentation/orders_screen.dart';
 import '../auth/auth_session.dart';
-import 'home_stub_screen.dart';
 
 /// Reachable while signed out. Everything else redirects to `/login`.
 const _publicRoutes = {'/login', '/signup', '/forgot-password'};
@@ -114,8 +114,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/forgot-password',
         builder: (context, state) => const ForgotPasswordScreen(),
       ),
-      GoRoute(path: '/home', builder: (context, state) => const HomeStubScreen()),
-      GoRoute(path: '/shop', builder: (context, state) => const ShopScreen()),
+      GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
+      GoRoute(
+        path: '/shop',
+        builder: (context, state) =>
+            ShopScreen(initialCategory: state.uri.queryParameters['category']),
+      ),
       GoRoute(
         path: '/product/:id',
         builder: (context, state) =>

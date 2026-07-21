@@ -106,6 +106,18 @@ class CatalogRepository {
     return Product.fromJson((data as Map).cast<String, dynamic>());
   }
 
+  /// Curated products for the home screen, from the dedicated
+  /// `/products/featured` route — a bare array, like `/products`. This is a
+  /// different endpoint from `/products?featured=true`; the web uses this one.
+  Future<List<Product>> fetchFeatured() async {
+    final data = await _api.get('/products/featured');
+    if (data is! List) return const [];
+    return data
+        .whereType<Map>()
+        .map((e) => Product.fromJson(e.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
   Future<List<String>> fetchCategories() async {
     final data = await _api.get('/products/categories');
     final list = data is Map ? data['data'] : data;
@@ -118,6 +130,24 @@ class CatalogRepository {
   /// silver only `rateDate`), and the id as `id` rather than `_id`.
   Future<List<MetalRate>> fetchSilverRates() async {
     final data = await _api.get('/silver-rates/today');
+    if (data is! List) return const [];
+    return data.whereType<Map>().map((raw) {
+      final e = raw.cast<String, dynamic>();
+      return MetalRate(
+        id: (e['id'] ?? e['_id'] ?? '').toString(),
+        date: (e['rateDate'] ?? e['date'] ?? e['createdAt'] ?? '').toString(),
+        ratePerGram: _toDouble(e['ratePerGram']) ?? 0,
+        ratePerKg: _toDouble(e['ratePerKg']) ?? 0,
+        purity: (e['purity'] ?? '').toString(),
+        updatedBy: e['updatedBy'] as String?,
+      );
+    }).toList(growable: false);
+  }
+
+  /// Today's gold rate, for the home rate strip. Same bare-array shape as
+  /// silver; gold rows carry both `date` and `rateDate`.
+  Future<List<MetalRate>> fetchGoldRates() async {
+    final data = await _api.get('/gold-rates/today');
     if (data is! List) return const [];
     return data.whereType<Map>().map((raw) {
       final e = raw.cast<String, dynamic>();

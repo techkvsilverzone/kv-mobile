@@ -12,12 +12,23 @@ final silverRatesProvider = FutureProvider<List<MetalRate>>((ref) {
   return ref.watch(catalogRepositoryProvider).fetchSilverRates();
 });
 
+/// Today's gold rate. Empty when the metal has no rate for the day, in which
+/// case the home rate strip hides the row.
+final goldRatesProvider = FutureProvider<List<MetalRate>>((ref) {
+  return ref.watch(catalogRepositoryProvider).fetchGoldRates();
+});
+
 final gstPercentProvider = FutureProvider<double>((ref) {
   return ref.watch(catalogRepositoryProvider).fetchGstPercent();
 });
 
 final categoriesProvider = FutureProvider<List<String>>((ref) {
   return ref.watch(catalogRepositoryProvider).fetchCategories();
+});
+
+/// Featured products for the home screen. The screen shows the first few.
+final featuredProductsProvider = FutureProvider<List<Product>>((ref) {
+  return ref.watch(catalogRepositoryProvider).fetchFeatured();
 });
 
 final productProvider = FutureProvider.family<Product, String>((ref, id) {

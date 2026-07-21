@@ -35,7 +35,13 @@ class FakeCatalogRepository implements CatalogRepository {
   Future<Product> fetchProduct(String id) async => _product(id);
 
   @override
+  Future<List<Product>> fetchFeatured() async => const [];
+
+  @override
   Future<List<String>> fetchCategories() async => const [];
+
+  @override
+  Future<List<MetalRate>> fetchGoldRates() async => const [];
 
   @override
   Future<List<MetalRate>> fetchSilverRates() async => const [];
