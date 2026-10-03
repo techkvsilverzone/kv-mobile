@@ -17,6 +17,12 @@ class FakeAuthRepository implements AuthRepository {
   /// When set, [getMe] throws this instead of returning [user].
   ApiException? getMeError;
 
+  /// When set, [requestOtp] throws this (e.g. the API's 404 for an unregistered number).
+  ApiException? requestOtpError;
+
+  String? lastOtpPhone;
+  String? lastSignupPhone;
+
   int getMeCalls = 0;
   int logoutCalls = 0;
   Map<String, dynamic>? lastUpdate;
@@ -39,9 +45,10 @@ class FakeAuthRepository implements AuthRepository {
     required String name,
     required String email,
     required String password,
-    String? phone,
+    required String phone,
     bool stallEvent = false,
   }) async {
+    lastSignupPhone = phone;
     return AuthResult(
       user: user ?? buildUser(name: name, email: email),
       token: 'token-signup',
@@ -50,11 +57,17 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<String> requestOtp(String email) async => 'Code sent';
+  Future<String> requestOtp(String phone) async {
+    lastOtpPhone = phone;
+    final error = requestOtpError;
+    if (error != null) throw error;
+    return 'Code sent';
+  }
 
   @override
-  Future<AuthResult> verifyOtp({required String email, required String code}) async {
-    return AuthResult(user: user ?? buildUser(email: email), token: 'token-otp');
+  Future<AuthResult> verifyOtp({required String phone, required String code}) async {
+    lastOtpPhone = phone;
+    return AuthResult(user: user ?? buildUser(), token: 'token-otp');
   }
 
   @override

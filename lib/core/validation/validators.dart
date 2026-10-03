@@ -15,12 +15,13 @@ final _indianMobile = RegExp(r'^[6-9]\d{9}$');
 final _sixDigitPin = RegExp(r'^\d{6}$');
 final _email = RegExp(r"^[\w.!#$%&'*+/=?^`{|}~-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$");
 
-/// Strips non-digits, then drops a leading `91` country code only when that
-/// leaves exactly 10 digits — mirrors the web's `digitsOnly` + length-12 check,
-/// so `+91 98765 43210` normalizes but `0919876543210` stays invalid.
+/// Strips non-digits, then drops a leading `91` country code or trunk `0` only
+/// when that leaves exactly 10 digits — matches kv-api's `toIndianMobile`, so
+/// `+91 98765 43210` and `09876543210` normalize but `0919876543210` stays invalid.
 String normalizePhone(String value) {
   var d = value.replaceAll(_digits, '');
   if (d.length == 12 && d.startsWith('91')) d = d.substring(2);
+  if (d.length == 11 && d.startsWith('0')) d = d.substring(1);
   return d;
 }
 

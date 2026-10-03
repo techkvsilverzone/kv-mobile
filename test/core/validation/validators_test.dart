@@ -10,6 +10,7 @@ void main() {
       expect(normalizePhone('+91 98765 43210'), '9876543210');
       expect(normalizePhone('98765-43210'), '9876543210');
       expect(normalizePhone('9876543210'), '9876543210');
+      expect(normalizePhone('09876543210'), '9876543210');
     });
 
     test('only strips a leading 91 when that leaves exactly 10 digits', () {

@@ -7,9 +7,9 @@ import '../application/auth_controller.dart';
 import 'widgets/auth_scaffold.dart';
 import 'widgets/form_error_banner.dart';
 
-/// Two ways in, matching the web: email+password, or a 6-digit code emailed to
-/// the user (`/auth/otp/request` → `/auth/otp/verify`). Both return the same
-/// `{user, token}` envelope, so the session handling is identical.
+/// Two ways in, matching the web: email+password, or a 6-digit code sent to the
+/// account's mobile number on WhatsApp (`/auth/otp/request` → `/auth/otp/verify`).
+/// Both return the same `{user, token}` envelope, so the session handling is identical.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -25,9 +25,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
 
-  final _otpEmailFormKey = GlobalKey<FormState>();
+  final _otpPhoneFormKey = GlobalKey<FormState>();
   final _otpCodeFormKey = GlobalKey<FormState>();
-  final _otpEmailCtrl = TextEditingController();
+  final _otpPhoneCtrl = TextEditingController();
   final _otpCodeCtrl = TextEditingController();
 
   bool _obscure = true;
@@ -39,7 +39,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     _tabs.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
-    _otpEmailCtrl.dispose();
+    _otpPhoneCtrl.dispose();
     _otpCodeCtrl.dispose();
     super.dispose();
   }
@@ -60,16 +60,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Future<void> _sendCode() async {
-    if (!_otpEmailFormKey.currentState!.validate()) return;
+    if (!_otpPhoneFormKey.currentState!.validate()) return;
     setState(() => _error = null);
 
-    final result = await ref.read(authControllerProvider.notifier).requestOtp(_otpEmailCtrl.text);
+    final result = await ref.read(authControllerProvider.notifier).requestOtp(_otpPhoneCtrl.text);
     if (!mounted) return;
 
     if (result.ok) {
       setState(() => _codeSent = true);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Check ${_otpEmailCtrl.text.trim()} for your login code.')),
+        SnackBar(content: Text('Login code sent to ${_otpPhoneCtrl.text.trim()} on WhatsApp.')),
       );
     } else {
       setState(() => _error = result.error);
@@ -81,7 +81,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     setState(() => _error = null);
 
     final result = await ref.read(authControllerProvider.notifier).verifyOtp(
-          email: _otpEmailCtrl.text,
+          phone: _otpPhoneCtrl.text,
           code: _otpCodeCtrl.text,
         );
     if (!mounted) return;
@@ -128,7 +128,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             children: [
               const Text("Don't have an account?"),
               TextButton(
-                onPressed: busy ? null : () => context.push('/signup'),
+                // Carries a typed mobile number over, so a "not registered" user doesn't retype it.
+                onPressed: busy
+                    ? null
+                    : () => context.push('/signup', extra: normalizePhone(_otpPhoneCtrl.text)),
                 child: const Text('Sign up'),
               ),
             ],
@@ -197,22 +200,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget _buildOtpTab(bool busy) {
     if (!_codeSent) {
       return Form(
-        key: _otpEmailFormKey,
+        key: _otpPhoneFormKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text("We'll email you a 6-digit code to sign in with."),
+            const Text("We'll send a 6-digit code to your registered mobile number on WhatsApp."),
             const SizedBox(height: 16),
             TextFormField(
-              controller: _otpEmailCtrl,
+              controller: _otpPhoneCtrl,
               enabled: !busy,
-              keyboardType: TextInputType.emailAddress,
-              autofillHints: const [AutofillHints.email],
+              keyboardType: TextInputType.phone,
+              autofillHints: const [AutofillHints.telephoneNumber],
               decoration: const InputDecoration(
-                labelText: 'Email address',
-                prefixIcon: Icon(Icons.mail_outline),
+                labelText: 'Mobile number',
+                hintText: '10-digit mobile number',
+                prefixIcon: Icon(Icons.phone_outlined),
               ),
-              validator: validateEmail,
+              validator: validatePhone,
             ),
             const SizedBox(height: 24),
             FilledButton(
@@ -229,7 +233,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Enter the code sent to ${_otpEmailCtrl.text.trim()}.'),
+          Text('Enter the code sent to ${_otpPhoneCtrl.text.trim()}.'),
           const SizedBox(height: 16),
           TextFormField(
             controller: _otpCodeCtrl,
@@ -256,7 +260,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           ),
           TextButton(
             onPressed: busy ? null : () => setState(() => _codeSent = false),
-            child: const Text('Use a different email'),
+            child: const Text('Use a different number'),
           ),
         ],
       ),

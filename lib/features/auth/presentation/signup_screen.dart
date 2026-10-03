@@ -6,7 +6,10 @@ import 'widgets/auth_scaffold.dart';
 import 'widgets/form_error_banner.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
-  const SignupScreen({super.key});
+  const SignupScreen({super.key, this.initialPhone});
+
+  /// Pre-fills the mobile field when the user arrives from a "not registered" login attempt.
+  final String? initialPhone;
 
   @override
   ConsumerState<SignupScreen> createState() => _SignupScreenState();
@@ -16,6 +19,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  late final _phoneCtrl = TextEditingController(text: widget.initialPhone);
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
 
@@ -27,6 +31,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
@@ -45,6 +50,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     final result = await ref.read(authControllerProvider.notifier).signup(
           name: _nameCtrl.text,
           email: _emailCtrl.text,
+          phone: _phoneCtrl.text,
           password: _passwordCtrl.text,
         );
     if (!mounted) return;
@@ -107,6 +113,21 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 prefixIcon: Icon(Icons.mail_outline),
               ),
               validator: validateEmail,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _phoneCtrl,
+              enabled: !busy,
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.telephoneNumber],
+              decoration: const InputDecoration(
+                labelText: 'Mobile number',
+                hintText: '10-digit mobile number',
+                helperText: "We'll send a verification code here on WhatsApp.",
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
+              validator: validatePhone,
             ),
             const SizedBox(height: 16),
             TextFormField(

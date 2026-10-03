@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/auth/auth_session.dart';
+import '../../../core/validation/validators.dart';
 import '../data/auth_repository.dart';
 
 /// Outcome of a submitted auth form. Screens render [error] inline rather than
@@ -55,6 +56,7 @@ class AuthController extends StateNotifier<bool> {
     required String name,
     required String email,
     required String password,
+    required String phone,
     bool stallEvent = false,
   }) {
     return _run(() async {
@@ -62,6 +64,7 @@ class AuthController extends StateNotifier<bool> {
         name: name.trim(),
         email: email.trim(),
         password: password,
+        phone: normalizePhone(phone),
         stallEvent: stallEvent,
       );
       await _session.setSession(user: result.user, token: result.token);
@@ -69,16 +72,16 @@ class AuthController extends StateNotifier<bool> {
     });
   }
 
-  Future<AuthSubmission> requestOtp(String email) {
+  Future<AuthSubmission> requestOtp(String phone) {
     return _run(() async {
-      await _repo.requestOtp(email.trim());
+      await _repo.requestOtp(normalizePhone(phone));
       return const AuthSubmission.success();
     });
   }
 
-  Future<AuthSubmission> verifyOtp({required String email, required String code}) {
+  Future<AuthSubmission> verifyOtp({required String phone, required String code}) {
     return _run(() async {
-      final result = await _repo.verifyOtp(email: email.trim(), code: code.trim());
+      final result = await _repo.verifyOtp(phone: normalizePhone(phone), code: code.trim());
       await _session.setSession(user: result.user, token: result.token);
       return const AuthSubmission.success();
     });

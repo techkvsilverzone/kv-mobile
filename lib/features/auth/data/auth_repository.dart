@@ -19,29 +19,29 @@ class AuthRepository {
     required String name,
     required String email,
     required String password,
-    String? phone,
+    required String phone,
     bool stallEvent = false,
   }) async {
     final data = await _api.post('/auth/signup', data: {
       'name': name,
       'email': email,
       'password': password,
-      if (phone != null && phone.isNotEmpty) 'phone': phone,
+      'phone': phone,
       if (stallEvent) 'stallEvent': true,
     });
     return AuthResult.fromJson((data as Map).cast<String, dynamic>());
   }
 
-  /// Sends a 6-digit login code by email. Returns the server's confirmation
-  /// message.
-  Future<String> requestOtp(String email) async {
-    final data = await _api.post('/auth/otp/request', data: {'email': email});
+  /// Sends a 6-digit login code to the account's mobile number (WhatsApp).
+  /// An unregistered number fails with a 404 whose message tells the user to sign up.
+  Future<String> requestOtp(String phone) async {
+    final data = await _api.post('/auth/otp/request', data: {'phone': phone});
     if (data is Map && data['message'] is String) return data['message'] as String;
     return 'Code sent';
   }
 
-  Future<AuthResult> verifyOtp({required String email, required String code}) async {
-    final data = await _api.post('/auth/otp/verify', data: {'email': email, 'code': code});
+  Future<AuthResult> verifyOtp({required String phone, required String code}) async {
+    final data = await _api.post('/auth/otp/verify', data: {'phone': phone, 'code': code});
     return AuthResult.fromJson((data as Map).cast<String, dynamic>());
   }
 
