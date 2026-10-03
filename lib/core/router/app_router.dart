@@ -7,6 +7,7 @@ import '../../features/auth/presentation/address_form_screen.dart';
 import '../../features/auth/presentation/change_password_screen.dart';
 import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/phone_verification_screen.dart';
 import '../../features/auth/presentation/profile_screen.dart';
 import '../../features/auth/presentation/signup_screen.dart';
 import '../../features/cart/presentation/cart_screen.dart';
@@ -102,6 +103,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return _publicRoutes.contains(location) ? null : '/login';
       }
       if (location == '/splash' || _publicRoutes.contains(location)) {
+        // Just signed up: signup has already sent a WhatsApp code, so offer to enter it before Home.
+        final user = session.user!;
+        if (session.justSignedUp && !user.phoneVerified && (user.phone ?? '').isNotEmpty) {
+          return '/verify-phone?sent=1';
+        }
         return '/home';
       }
       return null;
@@ -116,6 +122,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/forgot-password',
         builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/verify-phone',
+        builder: (context, state) =>
+            PhoneVerificationScreen(codeAlreadySent: state.uri.queryParameters['sent'] == '1'),
       ),
       GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
       GoRoute(

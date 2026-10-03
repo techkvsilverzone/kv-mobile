@@ -14,6 +14,7 @@ class User {
     required this.email,
     required this.role,
     this.phone,
+    this.phoneVerified = false,
     this.isAdmin = false,
     this.isActive = true,
     this.dateOfBirth,
@@ -24,6 +25,9 @@ class User {
   final String name;
   final String email;
   final String? phone;
+
+  /// Set once the customer enters the WhatsApp code sent to [phone]; reset when the number changes.
+  final bool phoneVerified;
   final bool isAdmin;
   final bool isActive;
 
@@ -41,6 +45,7 @@ class User {
       name: (json['name'] ?? '') as String,
       email: (json['email'] ?? '') as String,
       phone: json['phone'] as String?,
+      phoneVerified: json['phoneVerified'] == true,
       isAdmin: json['isAdmin'] == true,
       isActive: json['isActive'] != false,
       role: (json['role'] as String?) ?? 'customer',
@@ -54,6 +59,7 @@ class User {
         'name': name,
         'email': email,
         if (phone != null) 'phone': phone,
+        'phoneVerified': phoneVerified,
         'isAdmin': isAdmin,
         'isActive': isActive,
         'role': role,

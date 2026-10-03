@@ -191,6 +191,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   const SizedBox(height: 24),
                   const Divider(),
+                  if ((user.phone ?? '').isNotEmpty && !user.phoneVerified)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.phonelink_lock_outlined,
+                          color: Theme.of(context).colorScheme.primary),
+                      title: const Text('Verify mobile number'),
+                      subtitle: const Text('Confirm your number with a WhatsApp code'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: busy ? null : () => context.push('/verify-phone'),
+                    ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.receipt_long_outlined),

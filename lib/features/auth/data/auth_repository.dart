@@ -45,6 +45,20 @@ class AuthRepository {
     return AuthResult.fromJson((data as Map).cast<String, dynamic>());
   }
 
+  /// Sends a fresh verification code to the signed-in user's own number. Signup already sends
+  /// the first one. 400s if the number is already verified or missing.
+  Future<String> requestPhoneVerification() async {
+    final data = await _api.post('/users/me/phone/request-otp');
+    if (data is Map && data['message'] is String) return data['message'] as String;
+    return 'Code sent';
+  }
+
+  /// Returns the updated user, now with `phoneVerified: true`.
+  Future<User> verifyPhone(String code) async {
+    final data = await _api.post('/users/me/phone/verify-otp', data: {'code': code});
+    return User.fromJson(((data as Map)['user'] as Map).cast<String, dynamic>());
+  }
+
   /// NOTE: `/auth/forgot-password` is currently a no-op stub server-side — it
   /// ignores the body and always 200s without sending mail. Kept so the flow
   /// exists and starts working the moment the endpoint is implemented; the UI

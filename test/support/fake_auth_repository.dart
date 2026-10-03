@@ -2,8 +2,14 @@ import 'package:kv_silver_mobile/core/api/api_exception.dart';
 import 'package:kv_silver_mobile/features/auth/data/auth_repository.dart';
 import 'package:kv_silver_mobile/features/auth/data/models/user.dart';
 
-User buildUser({String id = 'user-1', String name = 'Asha', String email = 'asha@example.com'}) {
-  return User(id: id, name: name, email: email, role: 'customer');
+User buildUser({
+  String id = 'user-1',
+  String name = 'Asha',
+  String email = 'asha@example.com',
+  String? phone,
+  bool phoneVerified = false,
+}) {
+  return User(id: id, name: name, email: email, phone: phone, phoneVerified: phoneVerified, role: 'customer');
 }
 
 /// Test double for [AuthRepository]. `implements` rather than `extends` so no
@@ -50,7 +56,7 @@ class FakeAuthRepository implements AuthRepository {
   }) async {
     lastSignupPhone = phone;
     return AuthResult(
-      user: user ?? buildUser(name: name, email: email),
+      user: user ??= buildUser(name: name, email: email, phone: phone),
       token: 'token-signup',
       promoCoupon: stallEvent ? 'STALL10' : null,
     );
@@ -68,6 +74,34 @@ class FakeAuthRepository implements AuthRepository {
   Future<AuthResult> verifyOtp({required String phone, required String code}) async {
     lastOtpPhone = phone;
     return AuthResult(user: user ?? buildUser(), token: 'token-otp');
+  }
+
+  int phoneCodeRequests = 0;
+  String? lastPhoneCode;
+
+  /// When set, [verifyPhone] throws this (e.g. the API's "Incorrect code.").
+  ApiException? verifyPhoneError;
+
+  @override
+  Future<String> requestPhoneVerification() async {
+    phoneCodeRequests++;
+    return 'Code sent';
+  }
+
+  @override
+  Future<User> verifyPhone(String code) async {
+    lastPhoneCode = code;
+    final error = verifyPhoneError;
+    if (error != null) throw error;
+    final current = user ?? buildUser();
+    return user = User(
+      id: current.id,
+      name: current.name,
+      email: current.email,
+      phone: current.phone,
+      phoneVerified: true,
+      role: current.role,
+    );
   }
 
   @override

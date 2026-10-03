@@ -67,7 +67,7 @@ class AuthController extends StateNotifier<bool> {
         phone: normalizePhone(phone),
         stallEvent: stallEvent,
       );
-      await _session.setSession(user: result.user, token: result.token);
+      await _session.setSession(user: result.user, token: result.token, justSignedUp: true);
       return AuthSubmission.success(promoCoupon: result.promoCoupon);
     });
   }
@@ -83,6 +83,21 @@ class AuthController extends StateNotifier<bool> {
     return _run(() async {
       final result = await _repo.verifyOtp(phone: normalizePhone(phone), code: code.trim());
       await _session.setSession(user: result.user, token: result.token);
+      return const AuthSubmission.success();
+    });
+  }
+
+  Future<AuthSubmission> requestPhoneVerification() {
+    return _run(() async {
+      await _repo.requestPhoneVerification();
+      return const AuthSubmission.success();
+    });
+  }
+
+  Future<AuthSubmission> verifyPhone(String code) {
+    return _run(() async {
+      final user = await _repo.verifyPhone(code.trim());
+      _session.updateUser(user);
       return const AuthSubmission.success();
     });
   }

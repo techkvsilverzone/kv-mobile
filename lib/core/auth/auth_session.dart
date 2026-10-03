@@ -10,6 +10,7 @@ class AuthSessionState {
     required this.user,
     required this.isRestoring,
     this.restoreError,
+    this.justSignedUp = false,
   });
 
   /// The signed-in user, or null when signed out. A stored token alone is not
@@ -28,6 +29,10 @@ class AuthSessionState {
   /// the token was rejected. The splash screen surfaces this with a retry.
   final String? restoreError;
 
+  /// The session began with signup (not login/restore). Signup has already sent a WhatsApp
+  /// verification code, so the router offers the verification screen before Home.
+  final bool justSignedUp;
+
   bool get isAuthenticated => user != null;
 
   static const initial = AuthSessionState(user: null, isRestoring: true);
@@ -43,6 +48,7 @@ class AuthSessionState {
         user: clearUser ? null : (user ?? this.user),
         isRestoring: isRestoring ?? this.isRestoring,
         restoreError: clearError ? null : (restoreError ?? this.restoreError),
+        justSignedUp: justSignedUp,
       );
 }
 
@@ -86,9 +92,9 @@ class AuthSessionController extends StateNotifier<AuthSessionState> {
 
   /// Called after a successful login/signup/OTP verify, where the user object
   /// arrives alongside the token so no extra round trip is needed.
-  Future<void> setSession({required User user, required String token}) async {
+  Future<void> setSession({required User user, required String token, bool justSignedUp = false}) async {
     await _tokenStorage.saveToken(token);
-    state = AuthSessionState(user: user, isRestoring: false);
+    state = AuthSessionState(user: user, isRestoring: false, justSignedUp: justSignedUp);
   }
 
   /// Replaces the cached user after a profile edit without touching the token.
