@@ -84,7 +84,7 @@ class _ProductImageViewState extends State<ProductImageView> {
 
     if (image.isRemote) {
       return Image.network(
-        image.data,
+        image.url,
         fit: widget.fit,
         cacheWidth: cacheWidth,
         errorBuilder: (_, __, ___) => const _ImagePlaceholder(),

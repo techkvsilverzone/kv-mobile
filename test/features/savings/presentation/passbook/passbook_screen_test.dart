@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kv_silver_mobile/core/api/api_exception.dart';
 import 'package:kv_silver_mobile/core/auth/auth_session.dart';
+import 'package:kv_silver_mobile/features/auth/application/address_controller.dart';
+import 'package:kv_silver_mobile/features/auth/data/address_repository.dart';
+import 'package:kv_silver_mobile/features/auth/data/models/address.dart';
+import 'package:kv_silver_mobile/features/auth/data/models/user.dart';
 import 'package:kv_silver_mobile/features/savings/data/savings_models.dart';
 import 'package:kv_silver_mobile/features/savings/data/savings_repository.dart';
 import 'package:kv_silver_mobile/features/savings/presentation/passbook/passbook_screen.dart';
@@ -24,7 +28,7 @@ void main() {
 
     expect(find.text('This passbook belongs to another customer.'), findsOneWidget);
     expect(find.text('Back to my schemes'), findsOneWidget);
-    expect(find.text('Print passbook'), findsNothing);
+    expect(find.byTooltip('Print passbook'), findsNothing);
   });
 
   testWidgets('any other failure reads as not found', (tester) async {
@@ -72,10 +76,11 @@ SavingsEnrollment _scheme(String type) => SavingsEnrollment(
       ],
     );
 
-Future<void> pumpScheme(WidgetTester tester, SavingsEnrollment scheme, {bool flexible = false}) async {
+Future<void> pumpScheme(WidgetTester tester, SavingsEnrollment scheme, {bool flexible = false, User? user}) async {
   await tester.pumpWidget(ProviderScope(
     overrides: [
-      currentUserProvider.overrideWithValue(null),
+      currentUserProvider.overrideWithValue(user),
+      addressListProvider.overrideWith((ref) => AddressListController(_NoAddresses())),
       passbookProvider.overrideWith((ref, number) async => scheme),
       schemePlansProvider.overrideWith((ref) async => [
             SchemePlan(
@@ -97,17 +102,27 @@ void mainData() {
   testWidgets('fixed plan: details view on screen, ledger only painted for print', (tester) async {
     await pumpScheme(tester, _scheme('SILVER_11_1'));
 
-    expect(find.text('Print passbook'), findsOneWidget);
+    expect(find.byTooltip('Print passbook'), findsOneWidget);
     expect(find.text('Payment history'), findsOneWidget);
-    expect(find.textContaining('Pay Month'), findsNothing); // only the owner may pay
+    expect(find.text('Pay now'), findsNothing); // only the owner may pay
     expect(find.text('Ledger Statement'), findsOneWidget); // the hidden print copy
   });
 
-  testWidgets('flexible plan: the ledger is the main view, oldest first with a running total',
+  testWidgets('the owner gets a Pay bar for the next month', (tester) async {
+    await pumpScheme(tester, _scheme('SILVER_11_1'),
+        user: const User(id: 'u1', name: 'Vino', email: 'v@x.in', role: 'customer'));
+
+    expect(find.text('Pay now'), findsOneWidget);
+    expect(find.text('Month 3 of 11 due'), findsOneWidget);
+  });
+
+  testWidgets('flexible plan: app list on screen, print ledger oldest first with a running total',
       (tester) async {
     await pumpScheme(tester, _scheme('SILVER_SMART'), flexible: true);
 
-    expect(find.text('Payment history'), findsNothing);
+    expect(find.text('Payment history'), findsOneWidget);
+    expect(find.textContaining('months paid'), findsNothing);
+    // The printable ledger (painted beneath the page) keeps the shop's paper layout.
     expect(
         tester.getTopLeft(find.text('05 Jan 26')).dy, lessThan(tester.getTopLeft(find.text('05 Feb 26')).dy));
     // last row's cumulative + footer material weight, total and cumulative
@@ -116,4 +131,11 @@ void mainData() {
     expect(find.text(': Vino'), findsOneWidget);
     expect(find.text(': 1,000'), findsOneWidget);
   });
+}
+
+class _NoAddresses implements AddressRepository {
+  @override
+  Future<List<Address>> list() async => const [];
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

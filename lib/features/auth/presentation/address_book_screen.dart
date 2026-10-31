@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../core/ui/kv_ui.dart';
 import '../application/address_controller.dart';
 import '../data/models/address.dart';
 
@@ -22,6 +23,9 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     Future.microtask(() => ref.read(addressListProvider.notifier).load());
   }
 
+  void _add() => context.push('/profile/addresses/new');
+  void _edit(Address a) => context.push('/profile/addresses/edit', extra: a);
+
   Future<void> _delete(Address address) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -30,7 +34,11 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
         content: Text('${address.fullName}, ${address.city} will be removed.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Kv.danger, minimumSize: const Size(96, 44)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
@@ -38,10 +46,9 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
 
     try {
       await ref.read(addressListProvider.notifier).remove(address.id);
+      if (mounted) showKvToast(context, 'Address deleted');
     } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
+      if (mounted) showKvToast(context, "Couldn't delete address", message: e.message, error: true);
     }
   }
 
@@ -49,165 +56,165 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     try {
       // The server unsets the previous default itself; the controller re-lists
       // afterwards so the whole list reflects that.
-      await ref
-          .read(addressListProvider.notifier)
-          .update(address.id, address.copyWith(isDefault: true));
+      await ref.read(addressListProvider.notifier).update(address.id, address.copyWith(isDefault: true));
+      if (mounted) showKvToast(context, 'Default address updated');
     } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
+      if (mounted) showKvToast(context, "Couldn't update address", message: e.message, error: true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final addresses = ref.watch(addressListProvider);
+    final hasList = addresses.valueOrNull?.isNotEmpty ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Address book')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/profile/addresses/new'),
-        icon: const Icon(Icons.add),
-        label: const Text('Add address'),
-      ),
+      appBar: AppBar(title: const Text('Saved addresses')),
+      bottomNavigationBar: hasList
+          ? BottomActionBar(
+              action: FilledButton.icon(
+                onPressed: _add,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Add new address'),
+              ),
+            )
+          : null,
       body: RefreshIndicator(
         onRefresh: () => ref.read(addressListProvider.notifier).load(),
         child: addresses.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => _ErrorState(
-            message: error is ApiException ? error.message : 'Could not load your addresses.',
-            onRetry: () => ref.read(addressListProvider.notifier).load(),
+          loading: () => ListView(
+            padding: const EdgeInsets.only(top: Kv.pad),
+            children: const [ListSkeleton(rows: 3, height: 140)],
           ),
-          data: (list) {
-            if (list.isEmpty) return const _EmptyState();
-            return ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-              itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, i) => _AddressCard(
-                address: list[i],
-                onEdit: () => context.push('/profile/addresses/edit', extra: list[i]),
-                onDelete: () => _delete(list[i]),
-                onMakeDefault: () => _makeDefault(list[i]),
-              ),
-            );
-          },
+          error: (error, _) => ListView(children: [
+            EmptyState(
+              icon: Icons.cloud_off_rounded,
+              title: "Couldn't load your addresses",
+              message: error is ApiException ? error.message : 'Check your connection and try again.',
+              actionLabel: 'Try again',
+              onAction: () => ref.read(addressListProvider.notifier).load(),
+            ),
+          ]),
+          data: (list) => list.isEmpty
+              ? ListView(children: [
+                  const SizedBox(height: 40),
+                  EmptyState(
+                    icon: Icons.location_on_outlined,
+                    title: 'No saved addresses',
+                    message: 'Add a delivery address to check out faster.',
+                    actionLabel: 'Add address',
+                    onAction: _add,
+                  ),
+                ])
+              : ListView.separated(
+                  padding: const EdgeInsets.all(Kv.pad),
+                  itemCount: list.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) => AddressCard(
+                    address: list[i],
+                    onTap: () => _edit(list[i]),
+                    onEdit: () => _edit(list[i]),
+                    onDelete: () => _delete(list[i]),
+                    onMakeDefault: () => _makeDefault(list[i]),
+                  ),
+                ),
         ),
       ),
     );
   }
 }
 
-class _AddressCard extends StatelessWidget {
-  const _AddressCard({
+/// One saved address with its ⋮ actions.
+class AddressCard extends StatelessWidget {
+  const AddressCard({
+    super.key,
     required this.address,
+    this.onTap,
     required this.onEdit,
     required this.onDelete,
     required this.onMakeDefault,
   });
 
   final Address address;
+  final VoidCallback? onTap;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onMakeDefault;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final label = (address.label ?? '').trim();
+    final icon = switch (label.toLowerCase()) {
+      'home' => Icons.home_outlined,
+      'office' || 'work' => Icons.work_outline_rounded,
+      _ => Icons.location_on_outlined,
+    };
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(address.fullName, style: theme.textTheme.titleMedium),
-                ),
-                if (address.isDefault)
-                  Chip(
-                    label: const Text('Default'),
-                    visualDensity: VisualDensity.compact,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                  ),
-              ],
-            ),
-            if (address.label != null && address.label!.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(address.label!, style: theme.textTheme.labelMedium),
-            ],
-            const SizedBox(height: 8),
-            Text(address.address),
-            Text('${address.city}, ${address.state} ${address.pincode}'),
-            const SizedBox(height: 4),
-            Text(address.phone, style: theme.textTheme.bodySmall),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                TextButton.icon(
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('Edit'),
-                ),
-                TextButton.icon(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Delete'),
-                ),
-                const Spacer(),
-                if (!address.isDefault)
-                  TextButton(onPressed: onMakeDefault, child: const Text('Set default')),
-              ],
-            ),
+    return KvCard(
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(16, 14, 4, 16),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(color: address.isDefault ? Kv.blueSoft : Kv.bg, shape: BoxShape.circle),
+          child: Icon(icon, size: 20, color: address.isDefault ? Kv.blue : Kv.muted),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                Text(label.isEmpty ? address.fullName : label,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                if (address.isDefault) const StatusPill('Default', tone: PillTone.info),
+              ]),
+              const SizedBox(height: 6),
+              if (label.isNotEmpty)
+                Text(address.fullName, style: const TextStyle(fontWeight: FontWeight.w500)),
+              Text('${address.address}\n${address.city}, ${address.state} ${address.pincode}',
+                  style: const TextStyle(color: Kv.muted, height: 1.45)),
+              const SizedBox(height: 6),
+              Row(children: [
+                const Icon(Icons.phone_outlined, size: 14, color: Kv.subtle),
+                const SizedBox(width: 6),
+                Text('+91 ${address.phone}', style: const TextStyle(color: Kv.muted, fontSize: 13)),
+              ]),
+            ]),
+          ),
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'Address options',
+          icon: const Icon(Icons.more_vert_rounded, color: Kv.muted),
+          shape: RoundedRectangleBorder(borderRadius: Kv.smallRadius),
+          onSelected: (v) => switch (v) {
+            'edit' => onEdit(),
+            'default' => onMakeDefault(),
+            _ => onDelete(),
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'edit', child: _MenuItem(Icons.edit_outlined, 'Edit')),
+            if (!address.isDefault)
+              const PopupMenuItem(value: 'default', child: _MenuItem(Icons.check_circle_outline_rounded, 'Set as default')),
+            const PopupMenuItem(value: 'delete', child: _MenuItem(Icons.delete_outline_rounded, 'Delete', danger: true)),
           ],
         ),
-      ),
+      ]),
     );
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+class _MenuItem extends StatelessWidget {
+  const _MenuItem(this.icon, this.label, {this.danger = false});
+  final IconData icon;
+  final String label;
+  final bool danger;
 
   @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(32),
-      children: [
-        const SizedBox(height: 80),
-        Icon(Icons.location_off_outlined,
-            size: 48, color: Theme.of(context).colorScheme.outline),
-        const SizedBox(height: 16),
-        Text('No addresses yet',
-            textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        const Text('Add a delivery address to speed up checkout.',
-            textAlign: TextAlign.center),
-      ],
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(32),
-      children: [
-        const SizedBox(height: 80),
-        Icon(Icons.cloud_off, size: 48, color: Theme.of(context).colorScheme.outline),
-        const SizedBox(height: 16),
-        Text(message, textAlign: TextAlign.center),
-        const SizedBox(height: 16),
-        Center(child: FilledButton(onPressed: onRetry, child: const Text('Try again'))),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Row(children: [
+        Icon(icon, size: 20, color: danger ? Kv.danger : Kv.ink),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(color: danger ? Kv.danger : Kv.ink)),
+      ]);
 }

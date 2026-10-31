@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/ui/kv_ui.dart';
 import '../../../core/validation/validators.dart';
-import '../../savings/application/installment_payer.dart';
 import '../application/auth_controller.dart';
 import 'widgets/auth_scaffold.dart';
+import 'widgets/code_field.dart';
 
 /// Two steps: email a reset code (`POST /auth/forgot-password`), then redeem it
 /// with a new password (`POST /auth/reset-password`).
@@ -24,6 +24,8 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   bool _codeSent = false;
+  bool _obscure = true;
+  int _sends = 0; // restarts the resend countdown
 
   @override
   void dispose() {
@@ -38,11 +40,15 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     final result = await ref.read(authControllerProvider.notifier).forgotPassword(_emailCtrl.text);
     if (!mounted) return;
     if (result.ok) {
-      showToast(context, resend ? 'Code resent' : 'Reset code sent!',
-          'If ${_emailCtrl.text.trim()} has an account, a 6-digit code is on its way.');
-      setState(() => _codeSent = true);
+      showKvToast(context, resend ? 'Code resent' : 'Reset code sent',
+          message: 'If ${_emailCtrl.text.trim()} has an account, a 6-digit code is on its way.');
+      setState(() {
+        _codeSent = true;
+        _sends++;
+      });
     } else {
-      showToast(context, 'Request failed', result.error ?? 'Unable to send a reset code right now.', error: true);
+      showKvToast(context, 'Request failed',
+          message: result.error ?? 'Unable to send a reset code right now.', error: true);
     }
   }
 
@@ -55,109 +61,105 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
         );
     if (!mounted) return;
     if (result.ok) {
-      showToast(context, 'Password reset', 'Sign in with your new password.');
+      showKvToast(context, 'Password reset', message: 'Sign in with your new password.');
       context.go('/login');
     } else {
-      showToast(context, 'Reset failed', result.error ?? 'Unable to reset your password right now.', error: true);
+      showKvToast(context, 'Reset failed',
+          message: result.error ?? 'Unable to reset your password right now.', error: true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final busy = ref.watch(authControllerProvider);
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return AuthScaffold(
       showBack: true,
-      title: 'Reset Password',
+      title: _codeSent ? 'Check your email' : 'Reset your password',
       subtitle: _codeSent
-          ? 'Enter the code we emailed you and choose a new password'
-          : 'Enter your email to receive a reset code',
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (_codeSent)
-          Form(
-            key: _resetForm,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text.rich(
-                TextSpan(children: [
-                  const TextSpan(text: 'Code sent to '),
-                  TextSpan(text: _emailCtrl.text.trim(), style: const TextStyle(fontWeight: FontWeight.w700)),
-                ]),
-                textAlign: TextAlign.center,
-                style: TextStyle(color: muted),
-              ),
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _codeCtrl,
-                enabled: !busy,
-                keyboardType: TextInputType.number,
-                autofillHints: const [AutofillHints.oneTimeCode],
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 20, letterSpacing: 8),
-                decoration: const InputDecoration(labelText: 'Reset Code', hintText: '000000'),
-                validator: validateOtpCode,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordCtrl,
-                enabled: !busy,
-                obscureText: true,
-                autofillHints: const [AutofillHints.newPassword],
-                decoration: const InputDecoration(labelText: 'New Password', prefixIcon: Icon(Icons.lock_outline)),
-                validator: validatePassword,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _confirmCtrl,
-                enabled: !busy,
-                obscureText: true,
-                decoration:
-                    const InputDecoration(labelText: 'Confirm New Password', prefixIcon: Icon(Icons.lock_outline)),
-                validator: (v) => validateConfirmPassword(v, _passwordCtrl.text),
-              ),
-              const SizedBox(height: 24),
-              FilledButton(onPressed: busy ? null : _reset, child: Text(busy ? 'Resetting...' : 'Reset Password')),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: busy ? null : () => _sendCode(resend: true),
-                child: const Text('Resend code'),
+          ? 'Enter the code we emailed you and choose a new password.'
+          : "Enter your account's email and we'll send you a 6-digit reset code.",
+      footer: Center(
+        child: TextButton(onPressed: () => context.go('/login'), child: const Text('Back to sign in')),
+      ),
+      child: _codeSent ? _resetStep(busy) : _emailStep(busy),
+    );
+  }
+
+  Widget _emailStep(bool busy) => Form(
+        key: _emailForm,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          TextFormField(
+            controller: _emailCtrl,
+            enabled: !busy,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => busy ? null : _sendCode(),
+            decoration: const InputDecoration(labelText: 'Email address', prefixIcon: Icon(Icons.mail_outline_rounded)),
+            validator: validateEmail,
+          ),
+          const SizedBox(height: 20),
+          FilledButton(onPressed: busy ? null : _sendCode, child: busy ? buttonSpinner : const Text('Send reset code')),
+        ]),
+      );
+
+  Widget _resetStep(bool busy) => Form(
+        key: _resetForm,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+            decoration: BoxDecoration(color: Kv.bg, borderRadius: Kv.smallRadius),
+            child: Row(children: [
+              const Icon(Icons.mail_outline_rounded, size: 18, color: Kv.muted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(_emailCtrl.text.trim(),
+                    overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
               TextButton(
                 onPressed: busy ? null : () => setState(() => _codeSent = false),
-                child: const Text('Use a different email'),
+                child: const Text('Change'),
               ),
             ]),
-          )
-        else
-          Form(
-            key: _emailForm,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              TextFormField(
-                controller: _emailCtrl,
-                enabled: !busy,
-                keyboardType: TextInputType.emailAddress,
-                autofillHints: const [AutofillHints.email],
-                decoration: const InputDecoration(
-                  labelText: 'Email Address',
-                  hintText: 'your@email.com',
-                  prefixIcon: Icon(Icons.mail_outline),
-                ),
-                validator: validateEmail,
+          ),
+          const SizedBox(height: 16),
+          CodeField(controller: _codeCtrl, label: 'Reset code', enabled: !busy, validator: validateOtpCode),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ResendCodeButton(key: ValueKey(_sends), onPressed: busy ? null : () => _sendCode(resend: true)),
+          ),
+          const SizedBox(height: 4),
+          TextFormField(
+            controller: _passwordCtrl,
+            enabled: !busy,
+            obscureText: _obscure,
+            autofillHints: const [AutofillHints.newPassword],
+            textInputAction: TextInputAction.next,
+            decoration: InputDecoration(
+              labelText: 'New password',
+              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              suffixIcon: IconButton(
+                icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                tooltip: _obscure ? 'Show password' : 'Hide password',
+                onPressed: () => setState(() => _obscure = !_obscure),
               ),
-              const SizedBox(height: 24),
-              FilledButton(onPressed: busy ? null : _sendCode, child: Text(busy ? 'Sending...' : 'Send Reset Code')),
-            ]),
+            ),
+            validator: validatePassword,
           ),
-        const SizedBox(height: 16),
-        Center(
-          child: TextButton.icon(
-            onPressed: () => context.go('/login'),
-            icon: const Icon(Icons.arrow_back, size: 16),
-            label: const Text('Back to login'),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _confirmCtrl,
+            enabled: !busy,
+            obscureText: _obscure,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => busy ? null : _reset(),
+            decoration:
+                const InputDecoration(labelText: 'Confirm new password', prefixIcon: Icon(Icons.lock_outline_rounded)),
+            validator: (v) => validateConfirmPassword(v, _passwordCtrl.text),
           ),
-        ),
-      ]),
-    );
-  }
+          const SizedBox(height: 20),
+          FilledButton(onPressed: busy ? null : _reset, child: busy ? buttonSpinner : const Text('Reset password')),
+        ]),
+      );
 }

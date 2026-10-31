@@ -39,27 +39,27 @@ void main() {
       }),
     );
 
-    expect(find.text('ORDER CONFIRMED'), findsOneWidget);
+    expect(find.text('Order confirmed'), findsOneWidget);
     expect(find.textContaining('#A8B9C0D1'), findsOneWidget);
     expect(find.textContaining('31 October 2026'), findsOneWidget);
     expect(find.text('Qty: 2'), findsOneWidget);
     expect(find.text('₹2,000'), findsOneWidget);
     // The server's grand total, not a client recomputation.
-    expect(find.text('Total Paid'), findsOneWidget);
+    expect(find.text('Total paid'), findsOneWidget);
     expect(find.text('₹2,210'), findsOneWidget);
-    expect(find.text('Hallmarking & Packing'), findsOneWidget);
+    expect(find.text('Hallmarking & packing'), findsOneWidget);
     expect(find.text('Resend email'), findsOneWidget);
-    expect(find.text('Track My Order'), findsOneWidget);
-    expect(find.text('Download Invoice'), findsOneWidget);
-    expect(find.text('Continue Shopping'), findsOneWidget);
+    expect(find.text('View order'), findsOneWidget);
+    expect(find.text('Download invoice'), findsOneWidget);
+    expect(find.text('Keep shopping'), findsOneWidget);
   });
 
   testWidgets('without the order, order-only sections are hidden', (tester) async {
     await pump(tester, () async => throw const ServerException(404, 'Order not found'));
 
-    expect(find.text('ORDER CONFIRMED'), findsOneWidget);
-    expect(find.text('Total Paid'), findsNothing);
-    expect(find.text('Track My Order'), findsNothing);
-    expect(find.text('Continue Shopping'), findsOneWidget);
+    expect(find.text('Order confirmed'), findsOneWidget);
+    expect(find.text('Total paid'), findsNothing);
+    expect(find.text('View order'), findsNothing);
+    expect(find.text('Keep shopping'), findsOneWidget);
   });
 }

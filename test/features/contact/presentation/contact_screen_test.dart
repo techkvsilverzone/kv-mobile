@@ -34,16 +34,16 @@ void main() {
   Finder field(String label) => find.widgetWithText(TextFormField, label);
 
   Future<void> submit(WidgetTester tester) async {
-    final button = find.widgetWithText(FilledButton, 'Send Message');
+    final button = find.text('Send message');
     await tester.ensureVisible(button);
     await tester.tap(button);
     await tester.pumpAndSettle();
   }
 
   Future<void> fillValid(WidgetTester tester) async {
-    await tester.enterText(field('Full Name'), 'Vino');
-    await tester.enterText(field('Email Address'), 'vino@example.com');
-    await tester.enterText(field('Phone Number'), '+91 98765 43210');
+    await tester.enterText(field('Full name'), 'Vino');
+    await tester.enterText(field('Email address'), 'vino@example.com');
+    await tester.enterText(field('Mobile number'), '+91 98765 43210');
     await tester.enterText(field('Message'), 'Do you make custom kavasam?');
   }
 
@@ -80,9 +80,9 @@ void main() {
         'message': 'Do you make custom kavasam?',
       },
     ]);
-    expect(find.text('Message Sent!'), findsOneWidget);
+    expect(find.text('Message sent'), findsOneWidget);
     expect(find.text('Our team will get back to you within 24 hours.'), findsOneWidget);
-    expect(tester.widget<TextFormField>(field('Full Name')).controller!.text, isEmpty);
+    expect(tester.widget<TextFormField>(field('Full name')).controller!.text, isEmpty);
     expect(find.text('Select a topic'), findsOneWidget);
   });
 
@@ -97,6 +97,6 @@ void main() {
     expect(repo.payloads.single['subject'], 'General Enquiry');
     expect(find.text('Message failed'), findsOneWidget);
     expect(find.text('Failed to send message'), findsOneWidget);
-    expect(tester.widget<TextFormField>(field('Full Name')).controller!.text, 'Vino');
+    expect(tester.widget<TextFormField>(field('Full name')).controller!.text, 'Vino');
   });
 }

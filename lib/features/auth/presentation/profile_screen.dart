@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/auth/auth_session.dart';
+import '../../../core/ui/kv_ui.dart';
 import '../../../core/validation/validators.dart';
 import '../application/auth_controller.dart';
-import 'account_tabs.dart';
+import 'widgets/code_field.dart' show buttonSpinner;
 import 'widgets/form_error_banner.dart';
 
+/// "Personal details", pushed from the Account tab (which holds orders, addresses,
+/// password and sign-out).
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
@@ -43,10 +46,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _pickDate({
-    required DateTime? current,
-    required ValueChanged<DateTime?> onPicked,
-  }) async {
+  Future<void> _pickDate({required DateTime? current, required ValueChanged<DateTime?> onPicked}) async {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
@@ -62,8 +62,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     setState(() => _error = null);
 
     final phone = _phoneCtrl.text.trim();
-    final result =
-        await ref.read(authControllerProvider.notifier).updateProfile({
+    final result = await ref.read(authControllerProvider.notifier).updateProfile({
       'name': _nameCtrl.text.trim(),
       'email': _emailCtrl.text.trim(),
       // Send the normalized 10-digit form: the address endpoints reject
@@ -76,33 +75,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!mounted) return;
 
     if (result.ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Your profile has been updated.')),
-      );
+      showKvToast(context, 'Profile updated', message: 'Your details have been saved.');
     } else {
       setState(() => _error = result.error);
-    }
-  }
-
-  Future<void> _confirmSignOut() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Sign out?'),
-        content: const Text("You'll need to sign in again to place an order."),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Sign out')),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      // Clearing the session flips the router redirect back to /login.
-      await ref.read(authSessionProvider.notifier).signOut();
     }
   }
 
@@ -114,176 +89,141 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (user == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    final initials = user.name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).take(2).map((w) => w[0]).join().toUpperCase();
+    final hasPhone = (user.phone ?? '').isNotEmpty;
 
-    return DefaultTabController(
-      length: 5,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('My Account'),
-          bottom: const TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            tabs: [
-              Tab(icon: Icon(Icons.person_outline, size: 16), text: 'Profile'),
-              Tab(
-                  icon: Icon(Icons.inventory_2_outlined, size: 16),
-                  text: 'Orders'),
-              Tab(
-                  icon: Icon(Icons.favorite_border, size: 16),
-                  text: 'Wishlist'),
-              Tab(icon: Icon(Icons.credit_card, size: 16), text: 'Savings'),
-              Tab(icon: Icon(Icons.replay, size: 16), text: 'Returns'),
-            ],
-          ),
-        ),
-        body: TabBarView(children: [
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_error != null) ...[
-                        FormErrorBanner(message: _error!),
-                        const SizedBox(height: 16),
-                      ],
-                      TextFormField(
-                        controller: _nameCtrl,
-                        enabled: !busy,
-                        textCapitalization: TextCapitalization.words,
-                        decoration: const InputDecoration(
-                          labelText: 'Full name',
-                          prefixIcon: Icon(Icons.person_outline),
-                        ),
-                        validator: validateName,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _emailCtrl,
-                        enabled: !busy,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          labelText: 'Email address',
-                          prefixIcon: Icon(Icons.mail_outline),
-                        ),
-                        validator: validateEmail,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _phoneCtrl,
-                        enabled: !busy,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          labelText: 'Phone number',
-                          hintText: '+91 98765 43210',
-                          prefixIcon: Icon(Icons.phone_outlined),
-                        ),
-                        // Optional on the profile, unlike the address form.
-                        validator: validateOptionalPhone,
-                      ),
-                      const SizedBox(height: 16),
-                      _DateField(
-                        label: 'Date of birth',
-                        value: _dateOfBirth,
-                        enabled: !busy,
-                        onTap: () => _pickDate(
-                          current: _dateOfBirth,
-                          onPicked: (d) => setState(() => _dateOfBirth = d),
-                        ),
-                        onClear: () => setState(() => _dateOfBirth = null),
-                      ),
-                      const SizedBox(height: 16),
-                      _DateField(
-                        label: 'Wedding anniversary',
-                        value: _anniversary,
-                        enabled: !busy,
-                        onTap: () => _pickDate(
-                          current: _anniversary,
-                          onPicked: (d) => setState(() => _anniversary = d),
-                        ),
-                        onClear: () => setState(() => _anniversary = null),
-                      ),
-                      const SizedBox(height: 24),
-                      FilledButton(
-                        onPressed: busy ? null : _save,
-                        child: busy
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('Save changes'),
-                      ),
-                      const SizedBox(height: 24),
-                      const Divider(),
-                      if ((user.phone ?? '').isNotEmpty && !user.phoneVerified)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(Icons.phonelink_lock_outlined,
-                              color: Theme.of(context).colorScheme.primary),
-                          title: const Text('Verify mobile number'),
-                          subtitle: const Text(
-                              'Confirm your number with a WhatsApp code'),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap:
-                              busy ? null : () => context.push('/verify-phone'),
-                        ),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.receipt_long_outlined),
-                        title: const Text('My orders'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: busy ? null : () => context.push('/orders'),
-                      ),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.location_on_outlined),
-                        title: const Text('Address book'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: busy
-                            ? null
-                            : () => context.push('/profile/addresses'),
-                      ),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.lock_outline),
-                        title: const Text('Change password'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: busy
-                            ? null
-                            : () => context.push('/profile/password'),
-                      ),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.logout,
-                            color: Theme.of(context).colorScheme.error),
-                        title: Text('Sign out',
-                            style: TextStyle(
-                                color: Theme.of(context).colorScheme.error)),
-                        onTap: busy ? null : _confirmSignOut,
-                      ),
-                    ],
-                  ),
-                ),
+    return Scaffold(
+      appBar: AppBar(title: const Text('Personal details')),
+      bottomNavigationBar: BottomActionBar(
+        action: FilledButton(onPressed: busy ? null : _save, child: busy ? buttonSpinner : const Text('Save changes')),
+      ),
+      body: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(Kv.pad, 24, Kv.pad, 24),
+        child: Form(
+          key: _formKey,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Center(
+              child: CircleAvatar(
+                radius: 40,
+                backgroundColor: Kv.ink,
+                child: Text(initials.isEmpty ? '?' : initials,
+                    style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w600)),
               ),
             ),
-          ),
-          const AccountOrdersTab(),
-          const AccountWishlistTab(),
-          const AccountSavingsTab(),
-          const AccountReturnsTab(),
-        ]),
+            const SizedBox(height: 12),
+            Text(user.name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(user.email, textAlign: TextAlign.center, style: const TextStyle(color: Kv.muted, fontSize: 13)),
+            if (hasPhone) ...[
+              const SizedBox(height: 10),
+              Center(
+                child: user.phoneVerified
+                    ? const StatusPill('Mobile verified', tone: PillTone.success, icon: Icons.verified_rounded)
+                    : ActionChip(
+                        avatar: const Icon(Icons.error_outline_rounded, size: 16, color: Kv.warning),
+                        label: const Text('Verify mobile number'),
+                        labelStyle: const TextStyle(color: Kv.warning, fontWeight: FontWeight.w600, fontSize: 13),
+                        backgroundColor: Kv.warningSoft,
+                        side: BorderSide.none,
+                        shape: const StadiumBorder(),
+                        onPressed: busy ? null : () => context.push('/verify-phone'),
+                      ),
+              ),
+            ],
+            const SizedBox(height: Kv.gap),
+            if (_error != null) ...[
+              FormErrorBanner(message: _error!),
+              const SizedBox(height: 16),
+            ],
+            const _Caption('Contact'),
+            KvCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                TextFormField(
+                  controller: _nameCtrl,
+                  enabled: !busy,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: 'Full name', prefixIcon: Icon(Icons.person_outline_rounded)),
+                  validator: validateName,
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _emailCtrl,
+                  enabled: !busy,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: 'Email address', prefixIcon: Icon(Icons.mail_outline_rounded)),
+                  validator: validateEmail,
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _phoneCtrl,
+                  enabled: !busy,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Mobile number',
+                    prefixIcon: Icon(Icons.phone_iphone_rounded),
+                    prefixText: '+91  ',
+                  ),
+                  // Optional on the profile, unlike the address form.
+                  validator: validateOptionalPhone,
+                ),
+              ]),
+            ),
+            const SizedBox(height: Kv.gap),
+            const _Caption('Special dates', note: "We'll send you something special."),
+            KvCard(
+              padding: EdgeInsets.zero,
+              child: Column(children: [
+                _DateRow(
+                  icon: Icons.cake_outlined,
+                  label: 'Date of birth',
+                  value: _dateOfBirth,
+                  enabled: !busy,
+                  onTap: () => _pickDate(current: _dateOfBirth, onPicked: (d) => setState(() => _dateOfBirth = d)),
+                  onClear: () => setState(() => _dateOfBirth = null),
+                ),
+                const Divider(indent: 56),
+                _DateRow(
+                  icon: Icons.favorite_border_rounded,
+                  label: 'Wedding anniversary',
+                  value: _anniversary,
+                  enabled: !busy,
+                  onTap: () => _pickDate(current: _anniversary, onPicked: (d) => setState(() => _anniversary = d)),
+                  onClear: () => setState(() => _anniversary = null),
+                ),
+              ]),
+            ),
+          ]),
+        ),
       ),
     );
   }
 }
 
-class _DateField extends StatelessWidget {
-  const _DateField({
+class _Caption extends StatelessWidget {
+  const _Caption(this.text, {this.note});
+  final String text;
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text(text.toUpperCase(),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.8, color: Kv.muted)),
+          if (note != null) ...[
+            const Spacer(),
+            Text(note!, style: const TextStyle(fontSize: 12, color: Kv.subtle)),
+          ],
+        ]),
+      );
+}
+
+class _DateRow extends StatelessWidget {
+  const _DateRow({
+    required this.icon,
     required this.label,
     required this.value,
     required this.enabled,
@@ -291,6 +231,7 @@ class _DateField extends StatelessWidget {
     required this.onClear,
   });
 
+  final IconData icon;
   final String label;
   final DateTime? value;
   final bool enabled;
@@ -299,27 +240,22 @@ class _DateField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final v = value;
+    return ListTile(
       onTap: enabled ? onTap : null,
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: const Icon(Icons.event_outlined),
-          suffixIcon: value == null
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.clear),
-                  tooltip: 'Clear',
-                  onPressed: enabled ? onClear : null,
-                ),
-        ),
-        child: Text(
-          value == null
-              ? 'Not set'
-              : '${value!.day.toString().padLeft(2, '0')}/'
-                  '${value!.month.toString().padLeft(2, '0')}/${value!.year}',
-        ),
+      leading: Icon(icon, color: Kv.ink, size: 22),
+      title: Text(label),
+      subtitle: Text(
+        v == null ? 'Add date' : '${v.day.toString().padLeft(2, '0')}/${v.month.toString().padLeft(2, '0')}/${v.year}',
+        style: TextStyle(color: v == null ? Kv.blue : Kv.muted, fontWeight: v == null ? FontWeight.w500 : null),
       ),
+      trailing: v == null
+          ? const Icon(Icons.chevron_right, color: Kv.subtle)
+          : IconButton(
+              icon: const Icon(Icons.close_rounded, size: 20, color: Kv.subtle),
+              tooltip: 'Clear',
+              onPressed: enabled ? onClear : null,
+            ),
     );
   }
 }

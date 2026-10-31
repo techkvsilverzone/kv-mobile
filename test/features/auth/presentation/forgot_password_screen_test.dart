@@ -27,8 +27,8 @@ void main() {
   }
 
   Future<void> sendCode(WidgetTester tester) async {
-    await tester.enterText(find.widgetWithText(TextFormField, 'Email Address'), ' asha@example.com ');
-    await tester.tap(find.widgetWithText(FilledButton, 'Send Reset Code'));
+    await tester.enterText(find.widgetWithText(TextFormField, 'Email address'), ' asha@example.com ');
+    await tester.tap(find.widgetWithText(FilledButton, 'Send reset code'));
     await tester.pumpAndSettle();
   }
 
@@ -36,12 +36,12 @@ void main() {
     await pump(tester);
     await sendCode(tester);
     expect(repo.forgotPasswordCalls, ['asha@example.com']);
-    expect(find.text('Reset Code'), findsOneWidget);
+    expect(find.text('Reset code'), findsOneWidget);
 
-    await tester.enterText(find.widgetWithText(TextFormField, 'Reset Code'), '123456');
-    await tester.enterText(find.widgetWithText(TextFormField, 'New Password'), 'newpass1');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Confirm New Password'), 'newpass1');
-    await tester.tap(find.widgetWithText(FilledButton, 'Reset Password'));
+    await tester.enterText(find.widgetWithText(TextFormField, 'Reset code'), '123456');
+    await tester.enterText(find.widgetWithText(TextFormField, 'New password'), 'newpass1');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Confirm new password'), 'newpass1');
+    await tester.tap(find.widgetWithText(FilledButton, 'Reset password'));
     await tester.pumpAndSettle();
 
     expect(repo.resetPasswordCalls, [('asha@example.com', '123456', 'newpass1')]);
@@ -52,21 +52,21 @@ void main() {
     await pump(tester);
     await sendCode(tester);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Reset Password'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Reset password'));
     await tester.pumpAndSettle();
     expect(find.text('Enter the 6-digit code'), findsOneWidget);
     expect(repo.resetPasswordCalls, isEmpty);
 
     repo.resetPasswordError = const ServerException(400, 'Incorrect code.');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Reset Code'), '999999');
-    await tester.enterText(find.widgetWithText(TextFormField, 'New Password'), 'newpass1');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Confirm New Password'), 'other');
-    await tester.tap(find.widgetWithText(FilledButton, 'Reset Password'));
+    await tester.enterText(find.widgetWithText(TextFormField, 'Reset code'), '999999');
+    await tester.enterText(find.widgetWithText(TextFormField, 'New password'), 'newpass1');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Confirm new password'), 'other');
+    await tester.tap(find.widgetWithText(FilledButton, 'Reset password'));
     await tester.pumpAndSettle();
     expect(find.text('Passwords do not match'), findsOneWidget);
 
-    await tester.enterText(find.widgetWithText(TextFormField, 'Confirm New Password'), 'newpass1');
-    await tester.tap(find.widgetWithText(FilledButton, 'Reset Password'));
+    await tester.enterText(find.widgetWithText(TextFormField, 'Confirm new password'), 'newpass1');
+    await tester.tap(find.widgetWithText(FilledButton, 'Reset password'));
     await tester.pumpAndSettle();
     expect(find.text('Incorrect code.'), findsOneWidget);
     expect(find.text('LOGIN PAGE'), findsNothing);

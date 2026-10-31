@@ -13,10 +13,9 @@ void main() {
     await tester.pumpWidget(MaterialApp.router(routerConfig: router));
     await tester.pumpAndSettle();
 
-    expect(find.text('404'), findsOneWidget);
-    expect(find.text('Oops! Page not found'), findsOneWidget);
+    expect(find.text('Page not found'), findsOneWidget);
 
-    await tester.tap(find.text('Return to Home'));
+    await tester.tap(find.text('Go to Home'));
     await tester.pumpAndSettle();
     expect(find.text('home page'), findsOneWidget);
   });

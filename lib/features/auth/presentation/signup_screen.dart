@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/gestures.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/auth/auth_session.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/ui/kv_ui.dart';
 import '../../../core/validation/validators.dart';
-import '../../savings/application/installment_payer.dart';
 import '../application/auth_controller.dart';
 import 'widgets/auth_scaffold.dart';
+import 'widgets/code_field.dart' show buttonSpinner;
 
 /// `GET /stall-config` `{data: {active}}`: whether offline-stall registration
 /// is on. False on any failure, as on the web.
@@ -76,186 +78,157 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     if (!mounted) return;
 
     if (!result.ok) {
-      showToast(context, 'Could not create account',
-          result.error ?? 'Something went wrong. Please try again.',
-          error: true);
+      showKvToast(context, 'Could not create account',
+          message: result.error ?? 'Something went wrong. Please try again.', error: true);
       return;
     }
 
     final coupon = result.promoCoupon;
     if (coupon != null) {
-      showToast(context, 'Welcome! Promo coupon applied 🎉',
-          'Use code $coupon for 10% off your first order.');
+      showKvToast(context, 'Welcome! Promo coupon applied', message: 'Use code $coupon for 10% off your first order.');
     } else {
-      showToast(context, 'Account created!', 'Welcome to KV Silver Zone.');
+      showKvToast(context, 'Account created', message: 'Welcome to KV Silver Zone.');
     }
-    // The router moves on to phone verification (or home) on the auth-state change.
+    // Leave explicitly: when signup sits on top of other pages, the router's auth
+    // redirect doesn't reach it. Wait for the refresh that signing in triggers first.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final user = ref.read(currentUserProvider);
+    context.go(user != null && !user.phoneVerified && (user.phone ?? '').isNotEmpty ? '/verify-phone?sent=1' : '/home');
   }
 
-  bool get _stallActive =>
-      widget.stallLink && (ref.read(stallActiveProvider).valueOrNull ?? false);
+  bool get _stallActive => widget.stallLink && (ref.read(stallActiveProvider).valueOrNull ?? false);
 
   @override
   Widget build(BuildContext context) {
     final busy = ref.watch(authControllerProvider);
     final stall = widget.stallLink && (ref.watch(stallActiveProvider).valueOrNull ?? false);
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-    final link = TextStyle(color: Theme.of(context).colorScheme.primary);
+    const link = TextStyle(color: Kv.blue, fontWeight: FontWeight.w600);
+    const gap = SizedBox(height: 14);
 
     return AuthScaffold(
       showBack: true,
-      title: 'Create Account',
-      subtitle: 'Join KV Silver Zone for exclusive offers',
+      title: 'Create your account',
+      subtitle: 'Join KV Silver Zone for exclusive offers.',
+      footer: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        FilledButton(onPressed: busy ? null : _submit, child: busy ? buttonSpinner : const Text('Create account')),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Text('Already have an account?', style: TextStyle(color: Kv.muted)),
+          TextButton(onPressed: busy ? null : () => context.go('/login'), child: const Text('Sign in')),
+        ]),
+      ]),
       child: Form(
         key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (stall) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.tertiary.withValues(alpha: 0.2),
-                  border: Border.all(
-                      color: Theme.of(context).colorScheme.tertiary.withValues(alpha: 0.4)),
-                  borderRadius: BorderRadius.circular(8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (stall) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: Kv.goldSoft, borderRadius: Kv.smallRadius),
+              child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.local_offer_outlined, size: 20, color: Kv.gold),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Stall event offer', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                    SizedBox(height: 2),
+                    Text('Register now and get a free promo coupon credited to your account.',
+                        style: TextStyle(color: Kv.muted, fontSize: 13)),
+                  ]),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.storefront_outlined,
-                        size: 20, color: Theme.of(context).colorScheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Stall Event Offer!',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                          const SizedBox(height: 2),
-                          Text(
-                              'Register now and receive a free promotional coupon automatically credited to your account.',
-                              style: TextStyle(color: muted, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-            TextFormField(
-              controller: _nameCtrl,
-              enabled: !busy,
-              textCapitalization: TextCapitalization.words,
-              textInputAction: TextInputAction.next,
-              autofillHints: const [AutofillHints.name],
-              decoration: const InputDecoration(
-                labelText: 'Full Name',
-                hintText: 'Your full name',
-                prefixIcon: Icon(Icons.person_outline),
-              ),
-              validator: validateName,
+              ]),
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _emailCtrl,
-              enabled: !busy,
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.next,
-              autofillHints: const [AutofillHints.email],
-              decoration: const InputDecoration(
-                labelText: 'Email Address',
-                hintText: 'your@email.com',
-                prefixIcon: Icon(Icons.mail_outline),
-              ),
-              validator: validateEmail,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _phoneCtrl,
-              enabled: !busy,
-              keyboardType: TextInputType.phone,
-              textInputAction: TextInputAction.next,
-              autofillHints: const [AutofillHints.telephoneNumber],
-              decoration: const InputDecoration(
-                labelText: 'Mobile Number',
-                hintText: '10-digit mobile number',
-                helperText: "We'll send a verification code here after you sign up.",
-                prefixIcon: Icon(Icons.phone_outlined),
-              ),
-              validator: validatePhone,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _passwordCtrl,
-              enabled: !busy,
-              obscureText: _obscure,
-              textInputAction: TextInputAction.next,
-              autofillHints: const [AutofillHints.newPassword],
-              decoration: InputDecoration(
-                labelText: 'Password',
-                hintText: '••••••••',
-                prefixIcon: const Icon(Icons.lock_outline),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                  tooltip: _obscure ? 'Show password' : 'Hide password',
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
-              ),
-              validator: validatePassword,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _confirmCtrl,
-              enabled: !busy,
-              obscureText: _obscure,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(
-                labelText: 'Confirm Password',
-                hintText: '••••••••',
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-              validator: (v) => validateConfirmPassword(v, _passwordCtrl.text),
-            ),
-            const SizedBox(height: 8),
-            CheckboxListTile(
-              value: _acceptedTerms,
-              onChanged: busy ? null : (v) => setState(() => _acceptedTerms = v ?? false),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-              title: Text.rich(
-                TextSpan(children: [
-                  const TextSpan(text: 'I agree to the '),
-                  TextSpan(text: 'Terms of Service', style: link, recognizer: _termsTap),
-                  const TextSpan(text: ' and '),
-                  TextSpan(text: 'Privacy Policy', style: link, recognizer: _privacyTap),
-                ]),
-                style: TextStyle(color: muted, fontSize: 14),
-              ),
-            ),
-            if (_termsError != null)
-              Text(_termsError!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: busy ? null : _submit,
-              child: Text(busy ? 'Creating account...' : 'Create Account'),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text('Already have an account?', style: TextStyle(color: muted)),
-                TextButton(
-                  onPressed: busy ? null : () => context.go('/login'),
-                  child: const Text('Sign in'),
-                ),
-              ],
-            ),
+            const SizedBox(height: 20),
           ],
-        ),
+          TextFormField(
+            controller: _nameCtrl,
+            enabled: !busy,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.name],
+            decoration: const InputDecoration(labelText: 'Full name', prefixIcon: Icon(Icons.person_outline_rounded)),
+            validator: validateName,
+          ),
+          gap,
+          TextFormField(
+            controller: _phoneCtrl,
+            enabled: !busy,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.telephoneNumber],
+            decoration: const InputDecoration(
+              labelText: 'Mobile number',
+              prefixIcon: Icon(Icons.phone_iphone_rounded),
+              prefixText: '+91  ',
+            ),
+            validator: validatePhone,
+          ),
+          gap,
+          TextFormField(
+            controller: _emailCtrl,
+            enabled: !busy,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.email],
+            decoration: const InputDecoration(labelText: 'Email address', prefixIcon: Icon(Icons.mail_outline_rounded)),
+            validator: validateEmail,
+          ),
+          gap,
+          TextFormField(
+            controller: _passwordCtrl,
+            enabled: !busy,
+            obscureText: _obscure,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.newPassword],
+            decoration: InputDecoration(
+              labelText: 'Password',
+              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              suffixIcon: IconButton(
+                icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                tooltip: _obscure ? 'Show password' : 'Hide password',
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+            validator: validatePassword,
+          ),
+          gap,
+          TextFormField(
+            controller: _confirmCtrl,
+            enabled: !busy,
+            obscureText: _obscure,
+            textInputAction: TextInputAction.done,
+            decoration:
+                const InputDecoration(labelText: 'Confirm password', prefixIcon: Icon(Icons.lock_outline_rounded)),
+            validator: (v) => validateConfirmPassword(v, _passwordCtrl.text),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            borderRadius: Kv.smallRadius,
+            onTap: busy ? null : () => setState(() => _acceptedTerms = !_acceptedTerms),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              Checkbox(
+                value: _acceptedTerms,
+                onChanged: busy ? null : (v) => setState(() => _acceptedTerms = v ?? false),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+              ),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(children: [
+                    const TextSpan(text: 'I agree to the '),
+                    TextSpan(text: 'Terms of Service', style: link, recognizer: _termsTap),
+                    const TextSpan(text: ' and '),
+                    TextSpan(text: 'Privacy Policy', style: link, recognizer: _privacyTap),
+                  ]),
+                  style: const TextStyle(color: Kv.muted, fontSize: 14, height: 1.4),
+                ),
+              ),
+            ]),
+          ),
+          if (_termsError != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, top: 2),
+              child: Text(_termsError!, style: const TextStyle(color: Kv.danger, fontSize: 12)),
+            ),
+        ]),
       ),
     );
   }

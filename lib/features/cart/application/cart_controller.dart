@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../catalog/data/models/product.dart';
 import '../../../core/auth/auth_session.dart';
 import '../data/cart_repository.dart';
+import '../../catalog/data/catalog_repository.dart';
+import '../../../core/pricing/pricing.dart';
 import '../data/models/cart_item.dart';
 
 const _cartStorageKey = 'kv_silver_mobile.cart';
@@ -144,6 +146,14 @@ class CartController extends StateNotifier<List<CartItem>> {
     _syncProduct(item.productId);
   }
 
+  /// Undo for [remove]: puts the exact line back at [index].
+  void restore(CartItem item, int index) {
+    if (state.any((e) => e.lineKey == item.lineKey)) return;
+    state = [...state]..insert(index.clamp(0, state.length), item);
+    _persist();
+    _syncProduct(item.productId);
+  }
+
   Future<void> clear() async {
     final productIds = state.map((e) => e.productId).toSet();
     state = const [];
@@ -159,22 +169,43 @@ class CartController extends StateNotifier<List<CartItem>> {
     }
   }
 
-  /// Refreshes stock flags and prices against the current catalogue. Called on
-  /// entering checkout, because the web app never re-checks stock there and
-  /// only discovers an out-of-stock item as a flattened create-order failure.
+  /// Re-prices every product line (at its chosen size) and refreshes stock from the
+  /// current catalogue, so the cart shows what checkout will charge. Vouchers keep
+  /// their price.
   void refreshAvailability(Map<String, Product> latest) {
     state = [
       for (final e in state)
-        latest[e.productId] == null
-            ? e
-            : e.copyWith(
-                inStock: latest[e.productId]!.inStock,
-                stockAvailable: latest[e.productId]!.stockAvailable,
-              ),
+        if (e.isGiftVoucher || latest[e.productId] == null)
+          e
+        else
+          e.copyWith(
+            inStock: latest[e.productId]!.inStock,
+            stockAvailable: latest[e.productId]!.stockAvailable,
+            unitPrice: computeProductPricing(
+              latest[e.productId]!.toPricingInput(),
+              const [],
+              gramsOverride: parseGrams(e.variantWeight),
+            ).preGstPrice,
+          ),
     ];
     _persist();
   }
 }
+
+/// Fetches the cart's products and re-prices the lines. Watched by the cart and
+/// checkout screens, so prices are current whenever either opens.
+final cartRefreshProvider = FutureProvider.autoDispose<void>((ref) async {
+  final ids = ref.read(cartProvider).where((e) => !e.isGiftVoucher).map((e) => e.productId).toSet();
+  if (ids.isEmpty) return;
+  final repo = ref.read(catalogRepositoryProvider);
+  final latest = <String, Product>{};
+  await Future.wait(ids.map((id) async {
+    try {
+      latest[id] = await repo.fetchProduct(id);
+    } catch (_) {/* keep the stored line if the product can't be fetched */}
+  }));
+  ref.read(cartProvider.notifier).refreshAvailability(latest);
+});
 
 final cartProvider = StateNotifierProvider<CartController, List<CartItem>>((ref) {
   final controller = CartController(ref.watch(cartRepositoryProvider),

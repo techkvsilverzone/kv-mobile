@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_exception.dart';
-import '../../../core/format/currency.dart';
+import '../../../core/ui/kv_ui.dart';
+import '../../cart/presentation/widgets/item_thumb.dart';
 import '../data/models/order.dart';
 import '../data/order_repository.dart';
 import 'widgets/order_status_chip.dart';
@@ -17,33 +18,38 @@ class OrdersScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('My orders')),
       body: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(myOrdersProvider),
+        onRefresh: () => ref.refresh(myOrdersProvider.future),
         child: orders.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => _Message(
-            icon: Icons.cloud_off,
-            title: 'Could not load your orders',
-            body: e is ApiException ? e.message : 'Please try again.',
-            actionLabel: 'Try again',
-            onAction: () => ref.invalidate(myOrdersProvider),
+          skipLoadingOnRefresh: true,
+          loading: () => ListView(
+            padding: const EdgeInsets.only(top: 12),
+            children: const [ListSkeleton(rows: 5, height: 112)],
           ),
-          data: (list) {
-            if (list.isEmpty) {
-              return _Message(
-                icon: Icons.receipt_long_outlined,
-                title: 'No orders yet',
-                body: 'Your orders will appear here once you place one.',
-                actionLabel: 'Browse products',
-                onAction: () => context.go('/shop'),
-              );
-            }
-            return ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, i) => _OrderCard(order: list[i]),
-            );
-          },
+          error: (e, _) => ListView(children: [
+            EmptyState(
+              icon: Icons.cloud_off_rounded,
+              title: 'Could not load your orders',
+              message: e is ApiException ? e.message : 'Please try again.',
+              actionLabel: 'Try again',
+              onAction: () => ref.invalidate(myOrdersProvider),
+            ),
+          ]),
+          data: (list) => list.isEmpty
+              ? ListView(children: [
+                  EmptyState(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'No orders yet',
+                    message: 'Your orders will appear here once you place one.',
+                    actionLabel: 'Browse products',
+                    onAction: () => context.go('/shop'),
+                  ),
+                ])
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(Kv.pad, 8, Kv.pad, Kv.gap),
+                  itemCount: list.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) => _OrderCard(order: list[i]),
+                ),
         ),
       ),
     );
@@ -57,92 +63,43 @@ class _OrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final itemCount = order.items.fold<int>(0, (sum, e) => sum + e.quantity);
+    final first = order.items.firstOrNull;
+    final names = order.items.map((e) => e.productName).join(', ');
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => context.push('/orders/${order.id}'),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      order.invoiceNumber ?? '#${order.shortId}',
-                      style: theme.textTheme.titleSmall,
-                    ),
-                  ),
-                  OrderStatusChip(status: order.status),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '$itemCount item${itemCount == 1 ? '' : 's'}'
-                '${order.createdAt == null ? '' : ' · ${_formatDate(order.createdAt!)}'}',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(order.paymentMethodLabel, style: theme.textTheme.bodySmall),
-                  const Spacer(),
-                  Text(formatInr(order.grandTotal),
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700)),
-                ],
-              ),
-            ],
+    return KvCard(
+      onTap: () => context.push('/orders/${order.id}'),
+      padding: const EdgeInsets.all(14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(order.invoiceNumber ?? 'Order #${order.shortId}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              if (order.createdAt != null)
+                Text('Placed ${formatOrderDate(order.createdAt!)}',
+                    style: const TextStyle(fontSize: 12, color: Kv.muted)),
+            ]),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-String _formatDate(DateTime d) {
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-  return '${d.day.toString().padLeft(2, '0')} ${months[d.month - 1]} ${d.year}';
-}
-
-class _Message extends StatelessWidget {
-  const _Message({
-    required this.icon,
-    required this.title,
-    required this.body,
-    required this.actionLabel,
-    required this.onAction,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-  final String actionLabel;
-  final VoidCallback onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(32),
-      children: [
-        const SizedBox(height: 80),
-        Icon(icon, size: 48, color: Theme.of(context).colorScheme.outline),
-        const SizedBox(height: 16),
-        Text(title,
-            textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Text(body, textAlign: TextAlign.center),
-        const SizedBox(height: 16),
-        Center(child: FilledButton(onPressed: onAction, child: Text(actionLabel))),
-      ],
+          OrderStatusChip(status: order.status),
+        ]),
+        const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+        Row(children: [
+          ItemThumb(image: first?.image, size: 52),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(names, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
+              const SizedBox(height: 2),
+              Text('$itemCount item${itemCount == 1 ? '' : 's'} · ${order.paymentMethodLabel}',
+                  style: const TextStyle(fontSize: 12, color: Kv.muted)),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          PriceText(order.grandTotal, size: 15),
+          const Icon(Icons.chevron_right, color: Kv.subtle),
+        ]),
+      ]),
     );
   }
 }

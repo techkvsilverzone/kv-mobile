@@ -103,6 +103,7 @@ flutter:
   # Copies of kv-ui/src/assets images (about_banner re-encoded from a 7 MB PNG).
   assets:
     - assets/images/
+    - assets/brand/
 
   # The web's fonts (kv-ui/src/index.css): Inter for body, Playfair Display for headings.
   fonts:

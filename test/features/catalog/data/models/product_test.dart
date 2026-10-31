@@ -133,10 +133,10 @@ void main() {
       final pricing = computeProductPricing(product.toPricingInput(), rates);
 
       expect(pricing.computed, isTrue);
-      expect(pricing.metalValue, 2000); // 20 g × ₹100
-      expect(pricing.makingCharge, 200); // 10% of metal value
+      expect(pricing.metalValue, 1850); // 20 g × ₹100 × 0.925
+      expect(pricing.makingCharge, 185); // 10% of metal value
       expect(pricing.wastage, 50); // flat amount
-      expect(pricing.preGstPrice, 2250);
+      expect(pricing.preGstPrice, 2085);
     });
 
     test('a variant weight override changes the price', () {
@@ -150,8 +150,8 @@ void main() {
           computeProductPricing(product.toPricingInput(), rates, gramsOverride: 30);
 
       expect(pricing.grams, 30);
-      expect(pricing.metalValue, 3000);
-      expect(pricing.preGstPrice, 3350); // 3000 + 300 + 50
+      expect(pricing.metalValue, 2775);
+      expect(pricing.preGstPrice, 3102.5); // 2775 + 277.5 + 50
     });
 
     test('falls back to the listed price when no rates are available', () {

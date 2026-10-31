@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../core/ui/kv_ui.dart';
 import '../../../core/validation/validators.dart';
 import '../application/address_controller.dart';
 import '../data/models/address.dart';
+import 'widgets/code_field.dart' show buttonSpinner;
 import 'widgets/form_error_banner.dart';
 
 /// Add or edit an address. Pass an [Address] to edit; omit it to create.
@@ -52,9 +54,7 @@ class _AddressFormScreenState extends ConsumerState<AddressFormScreen> {
 
   @override
   void dispose() {
-    for (final c in [
-      _label, _firstName, _lastName, _address, _city, _state, _pincode, _phone,
-    ]) {
+    for (final c in [_label, _firstName, _lastName, _address, _city, _state, _pincode, _phone]) {
       c.dispose();
     }
     super.dispose();
@@ -91,6 +91,7 @@ class _AddressFormScreenState extends ConsumerState<AddressFormScreen> {
         await controller.add(address);
       }
       if (!mounted) return;
+      showKvToast(context, _isEditing ? 'Address updated' : 'Address saved');
       context.pop();
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -101,144 +102,159 @@ class _AddressFormScreenState extends ConsumerState<AddressFormScreen> {
     }
   }
 
+  Widget _caption(String t) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+        child: Text(t.toUpperCase(),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.8, color: Kv.muted)),
+      );
+
   @override
   Widget build(BuildContext context) {
+    const gap = SizedBox(height: 14);
+    const words = TextCapitalization.words;
+
     return Scaffold(
-      appBar: AppBar(title: Text(_isEditing ? 'Edit address' : 'Add address')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_error != null) ...[
-                    FormErrorBanner(message: _error!),
-                    const SizedBox(height: 16),
-                  ],
-                  TextFormField(
+      appBar: AppBar(title: Text(_isEditing ? 'Edit address' : 'New address')),
+      bottomNavigationBar: BottomActionBar(
+        action: FilledButton(
+          onPressed: _busy ? null : _submit,
+          child: _busy ? buttonSpinner : Text(_isEditing ? 'Save changes' : 'Save address'),
+        ),
+      ),
+      body: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.all(Kv.pad),
+        child: Form(
+          key: _formKey,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (_error != null) ...[
+              FormErrorBanner(message: _error!),
+              const SizedBox(height: 16),
+            ],
+            _caption('Contact'),
+            KvCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _firstName,
+                      enabled: !_busy,
+                      textCapitalization: words,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(labelText: 'First name'),
+                      validator: validateName,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _lastName,
+                      enabled: !_busy,
+                      textCapitalization: words,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(labelText: 'Last name'),
+                      // Deliberately laxer than first name — matches the web,
+                      // where single-letter surnames are common.
+                      validator: validateLastName,
+                    ),
+                  ),
+                ]),
+                gap,
+                TextFormField(
+                  controller: _phone,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Mobile number',
+                    prefixIcon: Icon(Icons.phone_iphone_rounded),
+                    prefixText: '+91  ',
+                  ),
+                  validator: validatePhone,
+                ),
+              ]),
+            ),
+            const SizedBox(height: Kv.gap),
+            _caption('Address'),
+            KvCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                TextFormField(
+                  controller: _pincode,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  textInputAction: TextInputAction.next,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(labelText: 'PIN code', counterText: ''),
+                  validator: validatePincode,
+                ),
+                gap,
+                TextFormField(
+                  controller: _address,
+                  enabled: !_busy,
+                  maxLines: 3,
+                  minLines: 2,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'House no., street, area',
+                    hintText: 'House / flat, street, landmark',
+                    alignLabelWithHint: true,
+                  ),
+                  validator: validateStreetAddress,
+                ),
+                gap,
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _city,
+                      enabled: !_busy,
+                      textCapitalization: words,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(labelText: 'City'),
+                      validator: validateCity,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _state,
+                      enabled: !_busy,
+                      textCapitalization: words,
+                      decoration: const InputDecoration(labelText: 'State'),
+                      validator: validateState,
+                    ),
+                  ),
+                ]),
+              ]),
+            ),
+            const SizedBox(height: Kv.gap),
+            _caption('Save as'),
+            KvCard(
+              padding: EdgeInsets.zero,
+              child: Column(children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: TextFormField(
                     controller: _label,
                     enabled: !_busy,
+                    textCapitalization: words,
                     decoration: const InputDecoration(
                       labelText: 'Label (optional)',
                       hintText: 'Home, Office…',
-                      prefixIcon: Icon(Icons.label_outline),
+                      prefixIcon: Icon(Icons.bookmark_border_rounded),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _firstName,
-                          enabled: !_busy,
-                          textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(labelText: 'First name'),
-                          validator: validateName,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _lastName,
-                          enabled: !_busy,
-                          textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(labelText: 'Last name'),
-                          // Deliberately laxer than first name — matches the web,
-                          // where single-letter surnames are common.
-                          validator: validateLastName,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _address,
-                    enabled: !_busy,
-                    maxLines: 3,
-                    minLines: 2,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      labelText: 'Address',
-                      hintText: 'House / flat, street, landmark',
-                      alignLabelWithHint: true,
-                    ),
-                    validator: validateStreetAddress,
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _city,
-                          enabled: !_busy,
-                          textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(labelText: 'City'),
-                          validator: validateCity,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _state,
-                          enabled: !_busy,
-                          textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(labelText: 'State'),
-                          validator: validateState,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _pincode,
-                    enabled: !_busy,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: 'PIN code',
-                      counterText: '',
-                    ),
-                    validator: validatePincode,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _phone,
-                    enabled: !_busy,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone number',
-                      hintText: '98765 43210',
-                      prefixIcon: Icon(Icons.phone_outlined),
-                    ),
-                    validator: validatePhone,
-                  ),
-                  const SizedBox(height: 8),
-                  CheckboxListTile(
-                    value: _isDefault,
-                    onChanged: _busy ? null : (v) => setState(() => _isDefault = v ?? false),
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Use as my default address'),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: _busy
-                        ? const SizedBox(
-                            height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : Text(_isEditing ? 'Save changes' : 'Add address'),
-                  ),
-                ],
-              ),
+                ),
+                const Divider(),
+                SwitchListTile(
+                  value: _isDefault,
+                  onChanged: _busy ? null : (v) => setState(() => _isDefault = v),
+                  title: const Text('Default address'),
+                  subtitle: const Text('Used first at checkout'),
+                ),
+              ]),
             ),
-          ),
+          ]),
         ),
       ),
     );

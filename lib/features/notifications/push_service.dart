@@ -33,7 +33,6 @@ class PushService {
     }
     _enabled = true;
     final messaging = FirebaseMessaging.instance;
-    await messaging.requestPermission();
 
     _ref.listen<AuthSessionState>(authSessionProvider, (prev, next) {
       if (next.isAuthenticated && !(prev?.isAuthenticated ?? false)) unawaited(_register());
@@ -56,6 +55,7 @@ class PushService {
       scaffoldMessengerKey.currentState
         ?..removeCurrentSnackBar()
         ..showSnackBar(SnackBar(
+          persist: false,
           content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(n.title ?? '', style: const TextStyle(fontWeight: FontWeight.w600)),
             if ((n.body ?? '').isNotEmpty) Text(n.body!),
@@ -78,6 +78,9 @@ class PushService {
 
   Future<void> _register() async {
     try {
+      // Asked once signed in, when order and savings updates are relevant —
+      // not over the splash on first launch.
+      await FirebaseMessaging.instance.requestPermission();
       // ignore: deprecated_member_use
       _token ??= await FirebaseMessaging.instance.getToken();
       if (_token != null) await _send(_token!);

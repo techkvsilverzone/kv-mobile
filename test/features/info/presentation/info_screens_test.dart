@@ -7,10 +7,10 @@ import 'package:kv_silver_mobile/features/info/presentation/terms_screen.dart';
 
 void main() {
   final screens = <String, Widget>{
-    'About Us': const AboutScreen(),
+    'About us': const AboutScreen(),
     'FAQ': const FaqScreen(),
-    'Privacy Policy': const PrivacyPolicyScreen(),
-    'Terms & Conditions': const TermsScreen(),
+    'Privacy policy': const PrivacyPolicyScreen(),
+    'Terms & conditions': const TermsScreen(),
   };
 
   for (final MapEntry(key: title, value: screen) in screens.entries) {
@@ -31,7 +31,9 @@ void main() {
     expect(find.text('What is BIS Hallmarking?'), findsOneWidget);
     expect(find.text('Can I withdraw before the scheme matures?'), findsNothing);
 
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Savings Scheme'));
+    final chip = find.widgetWithText(ChoiceChip, 'Savings Scheme');
+    await tester.ensureVisible(chip);
+    await tester.tap(chip);
     await tester.pumpAndSettle();
     expect(find.text('What is BIS Hallmarking?'), findsNothing);
 

@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../../../../core/api/api_exception.dart';
 import '../../../../core/auth/auth_session.dart';
+import '../../../../core/ui/kv_ui.dart';
 import '../../data/order_repository.dart';
 import 'invoice_view.dart';
 
@@ -43,8 +44,7 @@ class _InvoiceScreenState extends ConsumerState<InvoiceScreen> {
       await Printing.layoutPdf(name: fileName, onLayout: (_) => doc.save());
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Could not create the invoice. Please try again.')));
+        showKvToast(context, 'Could not create the invoice', message: 'Please try again.', error: true);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -56,35 +56,61 @@ class _InvoiceScreenState extends ConsumerState<InvoiceScreen> {
     final order = ref.watch(orderProvider(widget.orderId));
     final config = ref.watch(invoiceConfigProvider).valueOrNull ?? const InvoiceConfig();
     final user = ref.watch(currentUserProvider);
+    final o = order.valueOrNull;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Invoice')),
+      appBar: AppBar(title: Text(o?.invoiceNumber ?? 'Invoice')),
       body: order.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Padding(
+          padding: EdgeInsets.all(Kv.pad),
+          child: KvShimmer(child: KvSkeleton(height: 520, radius: Kv.radius)),
+        ),
         error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Text(e is ApiException ? e.message : 'Could not load this order.',
-                textAlign: TextAlign.center),
+          child: EmptyState(
+            icon: Icons.receipt_long_outlined,
+            title: 'Could not load the invoice',
+            message: e is ApiException ? e.message : 'Please try again.',
+            actionLabel: 'Try again',
+            onAction: () => ref.invalidate(orderProvider(widget.orderId)),
           ),
         ),
         data: (o) => ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(Kv.pad),
           children: [
-            RepaintBoundary(
-              key: _boundary,
-              child: InvoiceView(
-                  order: o, config: config, customerName: user?.name, customerEmail: user?.email),
+            // The printable invoice stays black-on-white paper.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: Kv.smallRadius,
+                border: Border.all(color: Kv.line),
+                boxShadow: const [BoxShadow(color: Color(0x0F000000), blurRadius: 16, offset: Offset(0, 4))],
+              ),
+              child: ClipRRect(
+                borderRadius: Kv.smallRadius,
+                child: RepaintBoundary(
+                  key: _boundary,
+                  child: InvoiceView(
+                      order: o, config: config, customerName: user?.name, customerEmail: user?.email),
+                ),
+              ),
             ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _busy ? null : () => _download('KV-Silver-Zone-Invoice'),
-              icon: const Icon(Icons.download, size: 16),
-              label: const Text('Download Invoice'),
-            ),
+            const SizedBox(height: 12),
+            const Text('Download saves a PDF or opens your printer.',
+                textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Kv.subtle)),
           ],
         ),
       ),
+      bottomNavigationBar: o == null
+          ? null
+          : BottomActionBar(
+              action: FilledButton.icon(
+                onPressed: _busy ? null : () => _download('KV-Silver-Zone-Invoice'),
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                icon: _busy
+                    ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.download_rounded, size: 18),
+                label: const Text('Download invoice'),
+              ),
+            ),
     );
   }
 }

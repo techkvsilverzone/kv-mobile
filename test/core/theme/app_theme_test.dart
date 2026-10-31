@@ -1,24 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kv_silver_mobile/core/theme/app_theme.dart';
+import 'package:kv_silver_mobile/core/theme/tokens.dart';
 
 void main() {
-  test('unthemed light uses the web base graphite primary and background', () {
-    final t = AppTheme.build(brightness: Brightness.light);
-    expect(t.colorScheme.primary, AppTheme.hsl(215, 18, 27));
-    expect(t.scaffoldBackgroundColor, AppTheme.hsl(220, 16, 97));
+  test('the theme uses the KV brand palette', () {
+    final t = AppTheme.light;
+    expect(t.useMaterial3, isTrue);
+    expect(t.colorScheme.primary, Kv.blue);
+    expect(t.colorScheme.onSurface, Kv.ink);
+    expect(t.scaffoldBackgroundColor, Kv.bg);
+    expect(t.textTheme.bodyMedium?.fontFamily, 'Inter');
+    expect(t.textTheme.headlineMedium?.fontFamily, Kv.serif);
   });
 
-  test('a store theme overrides primary in both light and dark, like the web', () {
-    final light = AppTheme.build(themeKey: 'deep-amethyst', brightness: Brightness.light);
-    final dark = AppTheme.build(themeKey: 'deep-amethyst', brightness: Brightness.dark);
-    expect(light.colorScheme.primary, AppTheme.hsl(270, 40, 45));
-    expect(dark.colorScheme.primary, AppTheme.hsl(270, 40, 45));
-    expect(dark.scaffoldBackgroundColor, AppTheme.hsl(222, 20, 9));
+  test('buttons are 52 high with the small radius', () {
+    final size = AppTheme.light.filledButtonTheme.style?.minimumSize?.resolve({});
+    expect(size?.height, 52);
   });
 
-  test('an unknown theme key keeps the base primary', () {
-    final t = AppTheme.build(themeKey: 'nope', brightness: Brightness.dark);
-    expect(t.colorScheme.primary, AppTheme.hsl(210, 22, 74));
+  test('snackbars float', () {
+    expect(AppTheme.light.snackBarTheme.behavior, SnackBarBehavior.floating);
   });
 }

@@ -1,23 +1,39 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/ui/kv_ui.dart';
 import '../../../../core/widgets/links.dart';
 
-/// Muted light body copy used throughout the web's legal pages.
-TextStyle? legalBodyStyle(BuildContext context) {
-  final theme = Theme.of(context);
-  return theme.textTheme.bodyMedium?.copyWith(
-    color: theme.colorScheme.onSurfaceVariant,
-    fontWeight: FontWeight.w300,
-    height: 1.6,
-  );
+/// Body copy for the legal pages: 15/1.65, ink.
+TextStyle? legalBodyStyle(BuildContext context) => const TextStyle(fontSize: 15, height: 1.65, color: Kv.ink);
+
+/// Bold lead-in inside legal copy.
+TextStyle legalStrongStyle(BuildContext context) => const TextStyle(color: Kv.ink, fontWeight: FontWeight.w600);
+
+/// Scaffold for a legal page: white, readable column, "Last updated" line on top.
+class LegalPage extends StatelessWidget {
+  const LegalPage({super.key, required this.title, required this.meta, required this.children});
+
+  final String title;
+  final String meta;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Kv.surface,
+        appBar: AppBar(title: Text(title)),
+        body: ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 40), children: [
+          Row(children: [
+            const Icon(Icons.update_rounded, size: 16, color: Kv.subtle),
+            const SizedBox(width: 6),
+            Expanded(child: Text(meta, style: const TextStyle(fontSize: 13, color: Kv.muted))),
+          ]),
+          const SizedBox(height: 16),
+          ...children,
+        ]),
+      );
 }
 
-/// The web's `<strong className="text-foreground font-medium">`.
-TextStyle legalStrongStyle(BuildContext context) =>
-    TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w500);
-
-/// A numbered policy section (web `Section`): serif primary heading, then
-/// paragraphs spaced 12px apart.
+/// A numbered policy section: heading, then paragraphs spaced 10px apart.
 class LegalSection extends StatelessWidget {
   const LegalSection({super.key, required this.title, required this.children});
 
@@ -25,28 +41,20 @@ class LegalSection extends StatelessWidget {
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title,
-              style: theme.textTheme.titleLarge?.copyWith(
-                  fontSize: 20, fontWeight: FontWeight.w500, color: theme.colorScheme.primary)),
-          const SizedBox(height: 16),
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 28),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Kv.ink, height: 1.3)),
+          const SizedBox(height: 10),
           for (final (i, child) in children.indexed) ...[
-            if (i > 0) const SizedBox(height: 12),
+            if (i > 0) const SizedBox(height: 10),
             child,
           ],
-        ],
-      ),
-    );
-  }
+        ]),
+      );
 }
 
-/// One policy paragraph, optionally bulleted and with a bold lead-in.
+/// One policy paragraph, optionally bulleted (hanging indent) and with a bold lead-in.
 class LegalText extends StatelessWidget {
   const LegalText(this.text, {super.key, this.lead, this.bullet = false});
 
@@ -56,40 +64,40 @@ class LegalText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text.rich(
+    final body = Text.rich(
       TextSpan(children: [
-        if (bullet) const TextSpan(text: '• '),
         if (lead != null) TextSpan(text: '$lead ', style: legalStrongStyle(context)),
         TextSpan(text: text),
       ]),
       style: legalBodyStyle(context),
     );
+    if (!bullet) return body;
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.only(top: 9, right: 12, left: 2),
+        child: Container(width: 5, height: 5, decoration: const BoxDecoration(color: Kv.subtle, shape: BoxShape.circle)),
+      ),
+      Expanded(child: body),
+    ]);
   }
 }
 
-/// Tinted, bordered intro box (web `bg-primary/5 border border-primary/15`).
+/// Soft tinted intro box.
 class LegalIntro extends StatelessWidget {
   const LegalIntro({super.key, required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 48),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: primary.withValues(alpha: 0.05),
-        border: Border.all(color: primary.withValues(alpha: 0.15)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: child,
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 28),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: Kv.blueSoft, borderRadius: Kv.cardRadius),
+        child: child,
+      );
 }
 
-/// Soft grey contact box (web `bg-secondary/50 rounded-lg`).
+/// Contact box at the end of a legal page.
 class LegalContactBox extends StatelessWidget {
   const LegalContactBox({super.key, required this.children, this.padding = 16});
 
@@ -97,21 +105,16 @@ class LegalContactBox extends StatelessWidget {
   final double padding;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(padding),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(padding),
+        decoration: BoxDecoration(color: Kv.bg, borderRadius: Kv.cardRadius),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+      );
 }
 
-/// A line like "Email: kvszchennai@gmail.com" where each value is a web
-/// mailto:/tel: link, tappable as on the web.
+/// A line like "Email: kvszchennai@gmail.com" where each value is a tappable
+/// mailto:/tel: link, as on the web.
 class LegalLinkLine extends StatelessWidget {
   const LegalLinkLine({super.key, this.label = '', required this.links, this.separator = ' · '});
 
@@ -121,16 +124,13 @@ class LegalLinkLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final link = TextStyle(color: Theme.of(context).colorScheme.primary);
+    const link = TextStyle(color: Kv.blue, fontWeight: FontWeight.w500);
     return Text.rich(
       TextSpan(children: [
         TextSpan(text: label),
         for (final (i, l) in links.indexed) ...[
           if (i > 0) TextSpan(text: separator),
-          TextSpan(
-              text: l,
-              style: link,
-              recognizer: TapGestureRecognizer()..onTap = () => openLink(hrefFor(l))),
+          TextSpan(text: l, style: link, recognizer: TapGestureRecognizer()..onTap = () => openLink(hrefFor(l))),
         ],
       ]),
       style: legalBodyStyle(context),

@@ -56,9 +56,9 @@ void main() {
     await pumpView(tester, SchemeDetailsView(scheme: makeScheme(), userName: 'Vino'));
 
     expect(find.text('₹3,000'), findsOneWidget);
-    expect(find.text('12.013 g'), findsOneWidget);
-    expect(find.text('3 of 11'), findsOneWidget);
-    expect(find.text('8'), findsOneWidget);
+    expect(find.text('12.013 g silver'), findsOneWidget);
+    expect(find.text('3 of 11 months paid'), findsOneWidget);
+    expect(find.text('8 to go'), findsOneWidget);
     expect(find.bySemanticsLabel('27% complete, 3 of 11 paid'), findsOneWidget);
   });
 
@@ -67,45 +67,57 @@ void main() {
     await pumpView(tester, SchemeDetailsView(scheme: makeScheme()));
 
     final ys = [
-      for (final m in ['Month 3', 'Month 2', 'Month 1']) tester.getTopLeft(find.text(m)).dy
+      for (final m in ['Month 4', 'Month 3', 'Month 2', 'Month 1']) tester.getTopLeft(find.text(m)).dy
     ];
-    expect(ys[0] < ys[1] && ys[1] < ys[2], isTrue);
+    expect(ys[0] < ys[1] && ys[1] < ys[2] && ys[2] < ys[3], isTrue);
+    expect(find.text('Due'), findsOneWidget); // the next month, not yet paid
 
     final month2 = find.byKey(const ValueKey('installment-102'));
     Finder inCard(Finder f) => find.descendant(of: month2, matching: f);
     expect(inCard(find.text('Month 2')), findsOneWidget);
-    expect(inCard(find.text('₹240')), findsOneWidget);
+    expect(inCard(find.text('₹240/g')), findsOneWidget);
     expect(inCard(find.text('4.167 g')), findsOneWidget);
     expect(inCard(find.text('Paid in store')), findsOneWidget);
-    expect(inCard(find.text('Receipt No. 102')), findsOneWidget);
+    expect(inCard(find.text('Receipt 102')), findsOneWidget);
     expect(inCard(find.byTooltip('Download receipt for Month 2')), findsOneWidget);
   });
 
-  testWidgets('labels the Pay button with the month being paid', (tester) async {
-    var paid = 0;
-    await pumpView(tester, SchemeDetailsView(scheme: makeScheme(), onPay: () => paid++));
+  testWidgets('flexible plans list payments by date with a running total', (tester) async {
+    await pumpView(tester, SchemeDetailsView(scheme: makeScheme(schemeType: 'SILVER_SMART'), flexible: true));
 
-    await tester.tap(find.text('Pay Month 4 of 11 (₹1,000)'));
+    expect(find.textContaining('months paid'), findsNothing);
+    expect(find.text('Due'), findsNothing);
+    expect(tester.getTopLeft(find.text('05 Mar 2026')).dy, lessThan(tester.getTopLeft(find.text('05 Jan 2026').last).dy));
+    expect(find.text('total 12.013 g'), findsOneWidget); // newest row carries the cumulative weight
+    expect(find.text('total 4.000 g'), findsOneWidget);
+  });
+
+  testWidgets('pay bar names the month being paid and calls back', (tester) async {
+    var paid = 0;
+    await pumpView(
+        tester, PassbookPayBar(scheme: makeScheme(), flexible: false, paying: false, onPay: () => paid++));
+
+    expect(find.text('Month 4 of 11 due'), findsOneWidget);
+    expect(find.text('₹1,000'), findsOneWidget);
+    await tester.tap(find.text('Pay now'));
     expect(paid, 1);
   });
 
-  testWidgets('shows a spinner instead of the label while paying', (tester) async {
-    await pumpView(tester, SchemeDetailsView(scheme: makeScheme(), onPay: () {}, paying: true));
+  testWidgets('pay bar shows a spinner instead of the label while paying', (tester) async {
+    await pumpView(tester, PassbookPayBar(scheme: makeScheme(), flexible: false, paying: true, onPay: () {}));
 
-    expect(find.textContaining('Pay Month'), findsNothing);
+    expect(find.text('Pay now'), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('hides Pay when there is nothing due and grams for a metal-less (Diwali) scheme',
-      (tester) async {
+  testWidgets('no due month and no grams for a completed metal-less (Diwali) scheme', (tester) async {
     await pumpView(
       tester,
-      SchemeDetailsView(
-          scheme: makeScheme(schemeType: 'DIWALI', metal: null, status: 'Completed'), onPay: () {}),
+      SchemeDetailsView(scheme: makeScheme(schemeType: 'DIWALI', metal: null, status: 'Completed')),
     );
 
-    expect(find.textContaining(RegExp(r'^Pay Month')), findsNothing);
-    expect(find.textContaining(RegExp(r' g$')), findsNothing);
-    expect(find.text('Rate /g'), findsNothing);
+    expect(find.text('Due'), findsNothing);
+    expect(find.textContaining(RegExp(r' g( |$)')), findsNothing);
+    expect(find.textContaining('/g'), findsNothing);
   });
 }

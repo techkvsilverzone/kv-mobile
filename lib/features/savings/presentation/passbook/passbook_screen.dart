@@ -3,17 +3,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/api/api_exception.dart';
 import '../../../../core/auth/auth_session.dart';
+import '../../../../core/ui/kv_ui.dart';
 import '../../../auth/application/address_controller.dart';
 import '../../application/installment_payer.dart';
 import '../../data/savings_repository.dart';
+import '../savings_scheme_screen.dart' show canPayScheme;
+import '../widgets/scheme_widgets.dart';
 import 'passbook_view.dart';
 import 'print_boundary.dart';
 import 'scheme_details_view.dart';
 
-/// Ledger width; the web lets the table scroll sideways on phones instead of squeezing it.
+/// Ledger width for printing; the paper ledger is wider than a phone.
 const _passbookWidth = 760.0;
 
-/// Full-page plan details for one passbook (kv-ui SavingsPlanDetails).
+/// One passbook (kv-ui SavingsPlanDetails): app-style summary and history, the printable
+/// ledger behind the print action, and Pay in a bottom bar for the owner.
 class PassbookScreen extends ConsumerStatefulWidget {
   const PassbookScreen({super.key, required this.passbookNumber});
 
@@ -49,7 +53,6 @@ class _PassbookScreenState extends ConsumerState<PassbookScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final number = widget.passbookNumber;
     final async = ref.watch(passbookProvider(number));
     final scheme = async.valueOrNull;
@@ -74,113 +77,91 @@ class _PassbookScreenState extends ConsumerState<PassbookScreen> {
     final customerName = orElse(scheme?.owner.name, isOwner ? user.name : null);
     final customerPhone = orElse(scheme?.owner.phone, isOwner ? user.phone : null);
 
-    Widget? passbook;
-    if (scheme != null) {
-      passbook = RepaintBoundary(
-        key: _passbookKey,
-        child: SizedBox(
-          width: _passbookWidth,
-          child: PassbookView(
-              scheme: scheme, userName: customerName, userPhone: customerPhone, userAddress: addressLine),
-        ),
-      );
-    }
-
     final Widget body;
     if (scheme == null && async.isLoading) {
-      body = Padding(
-        padding: const EdgeInsets.symmetric(vertical: 64),
-        child: Center(child: CircularProgressIndicator(color: cs.primary)),
-      );
-    } else if (scheme == null) {
-      final e = async.error;
-      body = Container(
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-            color: cs.surface, border: Border.all(color: cs.outline), borderRadius: BorderRadius.circular(8)),
-        child: Column(children: [
-          Text(
-            e is ServerException && e.statusCode == 403
-                ? 'This passbook belongs to another customer.'
-                : 'No savings plan found for this passbook number.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 8),
-          TextButton(onPressed: () => context.go('/savings-scheme'), child: const Text('Back to my schemes')),
+      body = KvShimmer(
+        child: ListView(padding: const EdgeInsets.all(Kv.pad), physics: const NeverScrollableScrollPhysics(), children: const [
+          KvSkeleton(height: 250, radius: Kv.radius),
+          SizedBox(height: Kv.gap),
+          KvSkeleton(width: 140, height: 18),
+          SizedBox(height: 12),
+          KvSkeleton(height: 280, radius: Kv.radius),
         ]),
       );
-    } else if (isFlexible) {
-      // KV Smart Purchase Plan keeps the ledger as its main view.
-      body = ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: ColoredBox(
-          color: cs.surface,
-          child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: passbook),
+    } else if (scheme == null) {
+      final forbidden = async.error is ServerException && (async.error as ServerException).statusCode == 403;
+      body = Center(
+        child: EmptyState(
+          icon: forbidden ? Icons.lock_outline_rounded : Icons.search_off_rounded,
+          title: forbidden ? 'This passbook belongs to another customer.' : 'No savings plan found for this passbook number.',
+          message: forbidden ? null : 'Check the number on your passbook and try again.',
+          actionLabel: 'Back to my schemes',
+          onAction: () => context.go('/savings-scheme'),
         ),
       );
     } else {
-      body = Container(
-        padding: EdgeInsets.all(MediaQuery.sizeOf(context).width >= 640 ? 24 : 16),
-        decoration: BoxDecoration(
-          color: cs.surface,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 2, offset: Offset(0, 1))],
-        ),
-        child: SchemeDetailsView(
-          scheme: scheme,
-          userName: customerName,
-          userPhone: customerPhone,
-          paying: _payer.payingSchemeId == scheme.id,
-          onPay: isOwner ? () => _payer.pay(scheme, isFlexible: isFlexible) : null,
-        ),
-      );
-    }
-
-    final page = ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 64),
-      children: [
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 672),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Row(children: [
-                  TextButton.icon(
-                    onPressed: () => context.go('/savings-scheme'),
-                    icon: const Icon(Icons.arrow_back, size: 16),
-                    label: const Text('My schemes'),
-                  ),
-                  const Spacer(),
-                  if (scheme != null)
-                    OutlinedButton.icon(
-                      onPressed: () =>
-                          printBoundary(context, _passbookKey, 'KV-Silver-Zone-Passbook-$number'),
-                      icon: const Icon(Icons.print_outlined, size: 14),
-                      label: const Text('Print passbook'),
-                    ),
-                ]),
+      // The ledger is painted beneath the opaque page so the print raster can capture it unseen.
+      body = Stack(children: [
+        Positioned(
+          top: 0,
+          left: 0,
+          width: _passbookWidth,
+          child: ExcludeSemantics(
+            child: RepaintBoundary(
+              key: _passbookKey,
+              child: SizedBox(
+                width: _passbookWidth,
+                child: PassbookView(
+                    scheme: scheme, userName: customerName, userPhone: customerPhone, userAddress: addressLine),
               ),
-              body,
-            ]),
+            ),
           ),
         ),
-      ],
-    );
+        Positioned.fill(
+          child: ColoredBox(
+            color: Kv.bg,
+            child: RefreshIndicator(
+              onRefresh: () async {
+                ref.invalidate(passbookProvider(number));
+                await ref.read(passbookProvider(number).future).catchError((_) => scheme);
+              },
+              child: ListView(padding: const EdgeInsets.fromLTRB(Kv.pad, 16, Kv.pad, 32), children: [
+                SchemeDetailsView(
+                    scheme: scheme, userName: customerName, userPhone: customerPhone, flexible: isFlexible),
+              ]),
+            ),
+          ),
+        ),
+      ]);
+    }
 
-    final background = Color.alphaBlend(cs.surfaceContainerHighest.withValues(alpha: 0.3), cs.surface);
+    final payable = isOwner && canPayScheme(scheme, isFlexible: isFlexible);
     return Scaffold(
-      backgroundColor: background,
-      body: SafeArea(
-        child: Stack(children: [
-          // Fixed plans only print the ledger: it is painted beneath the opaque page so the
-          // print raster can capture it without showing it.
-          if (passbook != null && !isFlexible)
-            Positioned(top: 0, left: 0, width: _passbookWidth, child: ExcludeSemantics(child: passbook)),
-          Positioned.fill(child: ColoredBox(color: background, child: page)),
-        ]),
+      appBar: AppBar(
+        title: const Text('Passbook'),
+        actions: [
+          if (scheme != null)
+            IconButton(
+              tooltip: 'Print passbook',
+              onPressed: () => printBoundary(context, _passbookKey, 'KV-Silver-Zone-Passbook-$number'),
+              icon: const Icon(Icons.print_outlined),
+            ),
+          const SizedBox(width: 4),
+        ],
       ),
+      body: body,
+      bottomNavigationBar: payable
+          ? PassbookPayBar(
+              scheme: scheme,
+              flexible: isFlexible,
+              paying: _payer.payingSchemeId == scheme.id,
+              onPay: () async {
+                if (!isFlexible) return _payer.pay(scheme, isFlexible: false);
+                final amount = await showFlexAmountSheet(context, scheme);
+                if (amount != null && mounted) await _payer.pay(scheme, isFlexible: true, customAmount: amount);
+              },
+            )
+          : null,
     );
   }
 }

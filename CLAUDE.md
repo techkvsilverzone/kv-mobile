@@ -47,6 +47,21 @@ simulator needs `http://localhost:5000/api/v1` passed explicitly.
 Package name is `kv_silver_mobile` (underscores — Dart identifiers can't contain hyphens) while the
 repo directory keeps the hyphen. Bundle/application ID: `com.kvsilverzone.kv_silver_mobile`.
 
+
+## Design (2026-10-31 redesign)
+
+The app is a native mobile design, not a port of the web layout. **Read
+[docs/design-system.md](docs/design-system.md) and [docs/redesign-brief.md](docs/redesign-brief.md)
+before touching any screen.** Shared kit: `lib/core/ui/kv_ui.dart` (tokens `Kv.*`, `KvCard`,
+`SectionHeader`, `PriceText`, `StatusPill`, `EmptyState`, `BottomActionBar`, `showKvSheet`,
+`showKvToast`, skeletons). Theme: `lib/core/theme/app_theme.dart` (fixed brand palette, light only).
+Navigation: bottom-tab `StatefulShellRoute` in `lib/core/router/app_router.dart` with the shell in
+`lib/app/shell.dart`; tab roots are `/home`, `/shop`, `/savings-scheme`, `/cart`, `/profile` (Account).
+Splash: `lib/app/splash_screen.dart` (router holds `/splash` until `splashDoneProvider`; whole-app
+widget tests override `splashAnimatedProvider` to false). Visual review: `flutter test test_screens
+--update-goldens` renders every screen to `test_screens/out/*.png` with fake data
+(`test_screens/*fixtures.dart`); look at them after any UI change.
+
 ## Architecture
 
 Feature-first. `lib/core/` holds cross-cutting concerns with **no** feature UI logic;
@@ -166,12 +181,8 @@ the shared test fixtures must be updated in all of them. Money is `double` rupee
 This is **display-only**. The server re-prices authoritatively at checkout; the app must never send
 a client-computed total as authoritative.
 
-**Theme** ([lib/core/theme/app_theme.dart](lib/core/theme/app_theme.dart)) is a port of the web's
-CSS tokens (`kv-ui/src/index.css`), with the admin-chosen primary from `GET /store-config`
-(cached in SharedPreferences, applied in `main.dart`). Fonts are bundled Inter + Playfair Display.
-The marquee strip (`features/store_config/marquee_bar.dart`) sits above every screen via
-`MaterialApp.builder`; widget tests that pump the whole app must override
-`marqueeAnimatedProvider` to false (an endless scroll never settles) and use a taller test view.
+**Theme**: see "Design" above. `GET /store-config` is still loaded; its marquee messages show as an
+announcement card on Home (the admin colour theme is not applied in the app).
 
 ## Conventions
 

@@ -48,26 +48,28 @@ void main() {
       c.addVoucher(id: 'v1', name: 'Gift Voucher', price: 500);
     });
 
-    expect(find.text('Shopping Cart'), findsOneWidget);
-    expect(find.text('20.0 g • 925'), findsOneWidget);
-    // Subtotal 1,500; GST 3% of the 1,000 product line only; total 1,530.
+    expect(find.text('Cart (2)'), findsOneWidget);
+    expect(find.text('20.0 g · 925'), findsOneWidget);
+    // Subtotal 1,500; GST 3% of the 1,000 product line only; total 1,530
+    // (price details + sticky bar).
     expect(find.text('₹1,500'), findsOneWidget);
     expect(find.text('₹30'), findsOneWidget);
-    expect(find.text('₹1,530'), findsOneWidget);
-    expect(find.text('Calculated at checkout'), findsOneWidget);
-    expect(find.text('Proceed to Checkout'), findsOneWidget);
+    expect(find.text('₹1,530'), findsNWidgets(2));
+    expect(find.text('At checkout'), findsOneWidget);
+    expect(find.text('Gift voucher'), findsOneWidget);
+    expect(find.text('Checkout'), findsOneWidget);
   });
 
   testWidgets('gift wrapping adds the fee line and a message field', (tester) async {
     await pumpCart(tester, (c) => c.add(_product(), unitPrice: 1000));
-    expect(find.text('Personalized Message'), findsNothing);
+    expect(find.text('Gift message (optional)'), findsNothing);
 
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
 
-    expect(find.text('Personalized Message'), findsOneWidget);
-    expect(find.text('Gift Wrapping'), findsNWidgets(2)); // card title + summary line
-    expect(find.text('₹1,129'), findsOneWidget); // 1,000 + 30 GST + 99
+    expect(find.text('Gift message (optional)'), findsOneWidget);
+    expect(find.text('Gift wrap'), findsNWidgets(2)); // card title + summary line
+    expect(find.text('₹1,129'), findsNWidgets(2)); // 1,000 + 30 GST + 99, summary + bar
   });
 
   test('checkout sends gift wrap as the API expects', () {
@@ -79,14 +81,32 @@ void main() {
     await pumpCart(tester, (c) => c.add(_product(inStock: false), unitPrice: 1000));
 
     expect(find.text('Out of stock — remove to continue'), findsOneWidget);
-    expect(find.text('Remove out-of-stock items'), findsOneWidget);
-    expect(find.text('One or more items are out of stock. Please remove them to proceed.'),
-        findsOneWidget);
+    expect(find.text('1 item is out of stock. Remove it to check out.'), findsOneWidget);
+    final checkout = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Checkout'));
+    expect(checkout.onPressed, isNull);
   });
 
-  testWidgets('empty cart matches the web copy', (tester) async {
+  testWidgets('empty cart offers a way back to the shop', (tester) async {
     await pumpCart(tester, (_) {});
-    expect(find.text('Your Cart is Empty'), findsOneWidget);
-    expect(find.text('Start Shopping'), findsOneWidget);
+    expect(find.text('Your cart is empty'), findsOneWidget);
+    expect(find.text('Start shopping'), findsOneWidget);
+  });
+
+  testWidgets('swipe removes a line and Undo puts it back', (tester) async {
+    late CartController cart;
+    await pumpCart(tester, (c) {
+      cart = c;
+      c.add(_product(), unitPrice: 1000);
+      c.addVoucher(id: 'v1', name: 'Gift Voucher', price: 500);
+    });
+
+    await tester.drag(find.text('Silver Anklet'), const Offset(-600, 0));
+    await tester.pumpAndSettle();
+    expect(cart.state.map((e) => e.name), ['Gift Voucher']);
+    expect(find.text('Removed from cart'), findsOneWidget);
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(cart.state.map((e) => e.name), ['Silver Anklet', 'Gift Voucher']);
   });
 }

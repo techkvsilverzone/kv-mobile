@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/ui/kv_ui.dart';
 import '../catalog/data/catalog_repository.dart';
 import '../catalog/data/models/product.dart';
 import '../catalog/presentation/widgets/product_grid.dart';
@@ -18,103 +19,73 @@ class RecentlyViewedScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
     final ids = ref.watch(recentlyViewedProvider);
+    final browse = EmptyState(
+      icon: Icons.history_rounded,
+      title: 'Nothing viewed yet',
+      message: 'Pieces you open will show up here so you can find them again.',
+      actionLabel: 'Browse the shop',
+      onAction: () => context.go('/shop'),
+    );
 
-    Widget header() => Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: theme.colorScheme.outline))),
-          padding: const EdgeInsets.fromLTRB(16, 40, 16, 40),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Icon(Icons.schedule, size: 20, color: muted),
-              const SizedBox(width: 12),
-              Text('YOUR JOURNEY',
-                  style: theme.textTheme.labelSmall?.copyWith(color: muted, letterSpacing: 2.4)),
-            ]),
-            const SizedBox(height: 16),
-            Text('Recently Viewed',
-                style: theme.textTheme.headlineLarge?.copyWith(fontWeight: FontWeight.w400)),
-            const SizedBox(height: 12),
-            Text("Pieces you've admired — revisit them before they're gone.",
-                style: TextStyle(color: muted, fontWeight: FontWeight.w300)),
-          ]),
-        );
-
-    final List<Widget> body;
+    final Widget body;
     if (ids.isEmpty) {
-      body = [
-        const SizedBox(height: 64),
-        Center(
-          child: CircleAvatar(
-            radius: 40,
-            backgroundColor: theme.colorScheme.secondary.withValues(alpha: 0.5),
-            child: Icon(Icons.schedule, size: 36, color: muted),
-          ),
-        ),
-        const SizedBox(height: 24),
-        Text('Nothing here yet',
-            textAlign: TextAlign.center, style: theme.textTheme.headlineSmall),
-        const SizedBox(height: 12),
-        Text('Browse our collection and this page will remember the pieces that caught your eye.',
-            textAlign: TextAlign.center, style: TextStyle(color: muted, fontWeight: FontWeight.w300)),
-        const SizedBox(height: 32),
-        Center(
-          child: FilledButton.icon(
-            onPressed: () => context.push('/shop'),
-            iconAlignment: IconAlignment.end,
-            icon: const Icon(Icons.arrow_forward, size: 16),
-            label: const Text('Explore Collection'),
-          ),
-        ),
-      ];
+      body = browse;
     } else {
       final all = ref.watch(_allProductsProvider);
       final products = [
         for (final id in ids) ...?all.valueOrNull?.where((p) => p.id == id).take(1),
       ];
-      body = [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 8, 16),
-          child: Row(children: [
-            Expanded(
-              child: Text('${products.length} piece${products.length != 1 ? 's' : ''} viewed recently',
-                  style: TextStyle(fontSize: 14, color: muted)),
-            ),
-            TextButton.icon(
-              onPressed: () => ref.read(recentlyViewedProvider.notifier).clear(),
-              style: TextButton.styleFrom(foregroundColor: muted),
-              icon: const Icon(Icons.delete_outline, size: 16),
-              label: const Text('CLEAR HISTORY', style: TextStyle(fontSize: 12, letterSpacing: 1)),
-            ),
-          ]),
-        ),
-        if (all.isLoading)
-          const Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator()))
-        else if (products.isNotEmpty)
-          ProductGrid(products: products)
-        else
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 48),
-            child: Text('Some products may no longer be available.',
-                textAlign: TextAlign.center, style: TextStyle(color: muted)),
-          ),
-        const SizedBox(height: 48),
-        Center(
-          child: OutlinedButton.icon(
-            onPressed: () => context.push('/shop'),
-            iconAlignment: IconAlignment.end,
-            icon: const Icon(Icons.arrow_forward, size: 16),
-            label: const Text('BROWSE FULL COLLECTION',
-                style: TextStyle(fontSize: 12, letterSpacing: 2)),
-          ),
-        ),
-      ];
+      body = all.isLoading
+          ? const ProductGridSkeleton(count: 4)
+          : all.hasError
+              ? EmptyState(
+                  icon: Icons.cloud_off_rounded,
+                  title: "Couldn't load these pieces",
+                  actionLabel: 'Try again',
+                  onAction: () => ref.invalidate(_allProductsProvider),
+                )
+              : products.isEmpty
+                  ? EmptyState(
+                      icon: Icons.history_rounded,
+                      title: 'No longer available',
+                      message: 'The pieces you viewed have been taken down.',
+                      actionLabel: 'Browse the shop',
+                      onAction: () => context.go('/shop'),
+                    )
+                  : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(Kv.pad, 0, Kv.pad, 12),
+                        child: Text('${products.length} piece${products.length != 1 ? 's' : ''}, newest first',
+                            style: const TextStyle(fontSize: 13, color: Kv.muted, fontWeight: FontWeight.w500)),
+                      ),
+                      ProductGrid(products: products),
+                    ]);
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Recently Viewed')),
-      body: ListView(padding: const EdgeInsets.only(bottom: 32), children: [header(), ...body]),
+      backgroundColor: Kv.surface,
+      appBar: AppBar(
+        title: const Text('Recently viewed'),
+        actions: [
+          if (ids.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                ref.read(recentlyViewedProvider.notifier).clear();
+                showKvToast(context, 'History cleared');
+              },
+              child: const Text('Clear'),
+            ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(_allProductsProvider);
+          if (ids.isNotEmpty) await ref.read(_allProductsProvider.future).catchError((_) => <Product>[]);
+        },
+        child: ListView(padding: const EdgeInsets.only(top: 12, bottom: 32), children: [body]),
+      ),
     );
   }
 }

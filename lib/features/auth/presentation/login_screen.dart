@@ -2,284 +2,257 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/router/app_router.dart' show safeReturnPath;
+import '../../../core/ui/kv_ui.dart';
 import '../../../core/validation/validators.dart';
-import '../../savings/application/installment_payer.dart';
 import '../application/auth_controller.dart';
 import 'widgets/auth_scaffold.dart';
 
-/// kv-ui pages/Login.tsx: Mobile + OTP (primary) or email + password. Both
-/// return the same `{user, token}`; on success the router redirects off the
-/// auth-state change, so there is no explicit navigation here.
+/// Sign in with a mobile code (default) or email + password. On success it
+/// leaves explicitly: back to the page that opened it, or to [from], else Home.
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.from});
+
+  /// Set by the router when a sign-in-only page sent the user here.
+  final String? from;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+class _LoginScreenState extends ConsumerState<LoginScreen> {
+  int _mode = 0; // 0 = mobile code, 1 = email + password
 
   final _passwordFormKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
 
-  final _otpPhoneFormKey = GlobalKey<FormState>();
-  final _otpPhoneCtrl = TextEditingController();
-  final _otpCodeCtrl = TextEditingController();
+  final _otpFormKey = GlobalKey<FormState>();
+  final _phoneCtrl = TextEditingController();
+  final _codeCtrl = TextEditingController();
 
   bool _obscure = true;
   bool _codeSent = false;
 
   @override
   void dispose() {
-    _tabs.dispose();
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
-    _otpPhoneCtrl.dispose();
-    _otpCodeCtrl.dispose();
+    for (final c in [_emailCtrl, _passwordCtrl, _phoneCtrl, _codeCtrl]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  void _welcome() => showToast(context, 'Welcome back!', 'You have successfully logged in.');
+  /// Leaves the sign-in screen. Pushed on top of a page → back to it (or on to
+  /// the protected page that asked); opened as a root page → [from] or Home.
+  Future<void> _signedIn() async {
+    showKvToast(context, 'Welcome back!', message: 'You are signed in.');
+    // Signing in refreshes the router, which re-applies the stack it read at that moment
+    // (login included). Navigate once that refresh has landed, or it undoes the pop.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final from = widget.from;
+    if (context.canPop()) {
+      from != null ? context.pushReplacement(safeReturnPath(from)) : context.pop();
+    } else {
+      context.go(safeReturnPath(from));
+    }
+  }
 
   Future<void> _submitPassword() async {
     if (!_passwordFormKey.currentState!.validate()) return;
-    final result = await ref.read(authControllerProvider.notifier).login(
-          email: _emailCtrl.text,
-          password: _passwordCtrl.text,
-        );
+    final result =
+        await ref.read(authControllerProvider.notifier).login(email: _emailCtrl.text, password: _passwordCtrl.text);
     if (!mounted) return;
     if (result.ok) {
-      _welcome();
+      _signedIn();
     } else {
-      // The web says "Invalid email or password." for every failure, even an
-      // outage; the server's own message is shown instead.
-      showToast(context, 'Login failed', result.error ?? 'Invalid email or password.', error: true);
+      showKvToast(context, 'Sign-in failed', message: result.error ?? 'Invalid email or password.', error: true);
     }
   }
 
   Future<void> _sendCode() async {
-    final phone = _otpPhoneCtrl.text.trim();
-    if (phone.isEmpty) {
-      showToast(context, 'Mobile number required', 'Enter your mobile number to receive a code.',
-          error: true);
-      return;
-    }
-    if (!_otpPhoneFormKey.currentState!.validate()) return;
-
+    if (!_otpFormKey.currentState!.validate()) return;
+    final phone = _phoneCtrl.text.trim();
     final result = await ref.read(authControllerProvider.notifier).requestOtp(phone);
     if (!mounted) return;
-
     if (result.ok) {
       setState(() => _codeSent = true);
-      showToast(context, 'Code sent', 'A login code is on its way to your mobile number.');
+      showKvToast(context, 'Code sent', message: 'A 6-digit code is on its way to +91 ${normalizePhone(phone)}.');
     } else if (result.statusCode == 404) {
-      final messenger = ScaffoldMessenger.of(context);
-      final scheme = Theme.of(context).colorScheme;
-      messenger.showSnackBar(SnackBar(
-        backgroundColor: scheme.error,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Number not registered', style: TextStyle(fontWeight: FontWeight.w600)),
-            Text(result.error ?? ''),
-          ],
-        ),
-        action: SnackBarAction(
-          label: 'Sign up',
-          textColor: scheme.onError,
-          // Carries the number over so the user doesn't retype it.
-          onPressed: () => context.push('/signup', extra: normalizePhone(phone)),
-        ),
-      ));
+      showKvToast(
+        context,
+        'Number not registered',
+        message: result.error,
+        error: true,
+        actionLabel: 'Sign up',
+        // Carries the number over so it isn't typed twice.
+        onAction: () => context.push('/signup', extra: normalizePhone(phone)),
+      );
     } else {
-      showToast(context, 'Error', result.error ?? 'Could not send the code. Please try again.',
-          error: true);
+      showKvToast(context, "Couldn't send the code", message: result.error ?? 'Please try again.', error: true);
     }
   }
 
   Future<void> _verifyCode() async {
-    final result = await ref.read(authControllerProvider.notifier).verifyOtp(
-          phone: _otpPhoneCtrl.text,
-          code: _otpCodeCtrl.text,
-        );
+    final result =
+        await ref.read(authControllerProvider.notifier).verifyOtp(phone: _phoneCtrl.text, code: _codeCtrl.text);
     if (!mounted) return;
     if (result.ok) {
-      _welcome();
+      _signedIn();
     } else if (result.statusCode != null) {
-      showToast(context, 'Invalid code', 'That code is incorrect or has expired.', error: true);
+      showKvToast(context, 'Invalid code', message: 'That code is incorrect or has expired.', error: true);
     } else {
-      showToast(context, 'Error', 'Something went wrong. Please try again.', error: true);
+      showKvToast(context, 'Something went wrong', message: 'Please try again.', error: true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final busy = ref.watch(authControllerProvider);
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return AuthScaffold(
-      title: 'Welcome Back',
-      subtitle: 'Sign in to your KV Silver Zone account',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TabBar(
-            controller: _tabs,
-            onTap: (_) => setState(() {}),
-            tabs: const [Tab(text: 'Mobile + OTP'), Tab(text: 'Password')],
-          ),
-          const SizedBox(height: 24),
-          if (_tabs.index == 0) _buildOtpTab(busy) else _buildPasswordTab(busy),
-          const SizedBox(height: 16),
-          // Wrap, not Row: the label plus button exceeds the form width on
-          // narrow phones and must reflow rather than overflow.
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text("Don't have an account?", style: TextStyle(color: muted)),
-              TextButton(
-                // Carries a typed mobile number over, so a "not registered" user doesn't retype it.
-                onPressed: busy
-                    ? null
-                    : () => context.push('/signup', extra: normalizePhone(_otpPhoneCtrl.text)),
-                child: const Text('Sign up'),
-              ),
-            ],
-          ),
-        ],
-      ),
+      title: 'Welcome back',
+      subtitle: 'Sign in to track orders, save favourites and pay your savings instalments.',
+      footer: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        const Text('New to KV Silver Zone?', style: TextStyle(color: Kv.muted)),
+        TextButton(
+          onPressed: busy ? null : () => context.push('/signup', extra: normalizePhone(_phoneCtrl.text)),
+          child: const Text('Create account'),
+        ),
+      ]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        AuthModeSwitch(
+          labels: const ['Mobile number', 'Email & password'],
+          index: _mode,
+          onChanged: busy ? (_) {} : (i) => setState(() => _mode = i),
+        ),
+        const SizedBox(height: 24),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: _mode == 0 ? _otpForm(busy) : _passwordForm(busy),
+        ),
+      ]),
     );
   }
 
-  Widget _buildPasswordTab(bool busy) {
+  Widget _otpForm(bool busy) {
+    final phone = _phoneCtrl.text.trim();
     return Form(
-      key: _passwordFormKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextFormField(
-            controller: _emailCtrl,
-            enabled: !busy,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-            autofillHints: const [AutofillHints.email],
-            decoration: const InputDecoration(
-              labelText: 'Email Address',
-              hintText: 'your@email.com',
-              prefixIcon: Icon(Icons.mail_outline),
-            ),
-            validator: validateEmail,
+      key: _otpFormKey,
+      child: Column(key: const ValueKey('otp'), crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        TextFormField(
+          controller: _phoneCtrl,
+          enabled: !busy && !_codeSent,
+          keyboardType: TextInputType.phone,
+          autofillHints: const [AutofillHints.telephoneNumber],
+          textInputAction: TextInputAction.done,
+          onChanged: (_) => setState(() {}),
+          onFieldSubmitted: (_) => busy || _codeSent ? null : _sendCode(),
+          decoration: const InputDecoration(
+            labelText: 'Mobile number',
+            prefixIcon: Icon(Icons.phone_iphone_rounded),
+            prefixText: '+91  ',
           ),
+          validator: validatePhone,
+        ),
+        if (_codeSent) ...[
           const SizedBox(height: 16),
           TextFormField(
-            controller: _passwordCtrl,
+            controller: _codeCtrl,
             enabled: !busy,
-            obscureText: _obscure,
-            textInputAction: TextInputAction.done,
-            autofillHints: const [AutofillHints.password],
-            onFieldSubmitted: (_) => busy ? null : _submitPassword(),
-            decoration: InputDecoration(
-              labelText: 'Password',
-              hintText: '••••••••',
-              prefixIcon: const Icon(Icons.lock_outline),
-              suffixIcon: IconButton(
-                icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                tooltip: _obscure ? 'Show password' : 'Hide password',
-                onPressed: () => setState(() => _obscure = !_obscure),
-              ),
-            ),
-            // Not the 6-character signup rule: accounts created before that rule
-            // must still be able to sign in.
-            validator: validateLoginPassword,
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: busy ? null : () => context.push('/forgot-password'),
-              child: const Text('Forgot password?'),
-            ),
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            autofillHints: const [AutofillHints.oneTimeCode],
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 24, letterSpacing: 10, fontWeight: FontWeight.w600),
+            onChanged: (v) {
+              setState(() {});
+              if (v.length == 6 && !busy) _verifyCode();
+            },
+            decoration: const InputDecoration(labelText: 'Login code', hintText: '••••••', counterText: ''),
           ),
           const SizedBox(height: 8),
-          FilledButton(
-            onPressed: busy ? null : _submitPassword,
-            child: Text(busy ? 'Signing in...' : 'Sign In'),
-          ),
+          Row(children: [
+            Expanded(
+              child: Text('Sent to +91 ${normalizePhone(phone)}',
+                  style: const TextStyle(fontSize: 13, color: Kv.muted)),
+            ),
+            TextButton(
+              onPressed: busy
+                  ? null
+                  : () => setState(() {
+                        _codeSent = false;
+                        _codeCtrl.clear();
+                      }),
+              child: const Text('Change number'),
+            ),
+          ]),
+          TextButton(onPressed: busy ? null : _sendCode, child: const Text('Resend code')),
         ],
-      ),
+        const SizedBox(height: 20),
+        FilledButton(
+          onPressed: busy
+              ? null
+              : _codeSent
+                  ? (_codeCtrl.text.length == 6 ? _verifyCode : null)
+                  : (phone.isEmpty ? null : _sendCode),
+          child: busy
+              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+              : Text(_codeSent ? 'Verify & sign in' : 'Send login code'),
+        ),
+      ]),
     );
   }
 
-  Widget _buildOtpTab(bool busy) {
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-    final phone = _otpPhoneCtrl.text.trim();
+  Widget _passwordForm(bool busy) {
     return Form(
-      key: _otpPhoneFormKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextFormField(
-            controller: _otpPhoneCtrl,
-            enabled: !busy && !_codeSent,
-            keyboardType: TextInputType.phone,
-            autofillHints: const [AutofillHints.telephoneNumber],
-            onChanged: (_) => setState(() => _codeSent = false),
-            decoration: const InputDecoration(
-              labelText: 'Mobile Number',
-              hintText: '10-digit mobile number',
-              prefixIcon: Icon(Icons.phone_outlined),
+      key: _passwordFormKey,
+      child: Column(key: const ValueKey('password'), crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        TextFormField(
+          controller: _emailCtrl,
+          enabled: !busy,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.email],
+          decoration: const InputDecoration(labelText: 'Email address', prefixIcon: Icon(Icons.mail_outline_rounded)),
+          validator: validateEmail,
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _passwordCtrl,
+          enabled: !busy,
+          obscureText: _obscure,
+          textInputAction: TextInputAction.done,
+          autofillHints: const [AutofillHints.password],
+          onFieldSubmitted: (_) => busy ? null : _submitPassword(),
+          decoration: InputDecoration(
+            labelText: 'Password',
+            prefixIcon: const Icon(Icons.lock_outline_rounded),
+            suffixIcon: IconButton(
+              icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+              tooltip: _obscure ? 'Show password' : 'Hide password',
+              onPressed: () => setState(() => _obscure = !_obscure),
             ),
-            validator: validatePhone,
           ),
-          const SizedBox(height: 24),
-          if (!_codeSent)
-            FilledButton(
-              onPressed: busy || phone.isEmpty ? null : _sendCode,
-              child: Text(busy ? 'Sending code...' : 'Send Login Code'),
-            )
-          else ...[
-            TextFormField(
-              controller: _otpCodeCtrl,
-              enabled: !busy,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              autofillHints: const [AutofillHints.oneTimeCode],
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: 'Login Code',
-                hintText: '6-digit code',
-                prefixIcon: const Icon(Icons.key_outlined),
-                counterText: '',
-                helperText: 'Sent to +91 ${normalizePhone(phone)}',
-              ),
-            ),
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              children: [
-                TextButton(
-                  // The web disables the number once a code is sent, leaving no
-                  // way to correct it; this re-enables it.
-                  onPressed: busy ? null : () => setState(() => _codeSent = false),
-                  child: Text('Use a different number', style: TextStyle(color: muted)),
-                ),
-                TextButton(
-                  onPressed: busy ? null : _sendCode,
-                  child: const Text('Resend code'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: busy || _otpCodeCtrl.text.length != 6 ? null : _verifyCode,
-              child: Text(busy ? 'Verifying...' : 'Verify & Sign In'),
-            ),
-          ],
-        ],
-      ),
+          // Not the 6-character signup rule: older accounts must still sign in.
+          validator: validateLoginPassword,
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: busy ? null : () => context.push('/forgot-password'),
+            child: const Text('Forgot password?'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        FilledButton(
+          onPressed: busy ? null : _submitPassword,
+          child: busy
+              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+              : const Text('Sign in'),
+        ),
+      ]),
     );
   }
 }

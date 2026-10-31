@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_exception.dart';
-import '../../../core/format/currency.dart';
+import '../../../core/ui/kv_ui.dart';
+import '../../cart/presentation/widgets/item_thumb.dart';
+import '../../checkout/presentation/widgets/price_details.dart';
+import '../../returns/request_return_dialog.dart';
 import '../data/models/order.dart';
 import '../data/order_repository.dart';
 import 'widgets/order_status_chip.dart';
@@ -12,57 +15,46 @@ class OrderDetailScreen extends ConsumerWidget {
 
   final String orderId;
 
+  Future<void> _resend(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(orderRepositoryProvider).resendConfirmation(orderId);
+      if (context.mounted) showKvToast(context, 'Confirmation email sent');
+    } on ApiException catch (e) {
+      if (context.mounted) showKvToast(context, 'Could not resend', message: e.message, error: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final order = ref.watch(orderProvider(orderId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Order')),
-      body: order.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.cloud_off,
-                    size: 48, color: Theme.of(context).colorScheme.outline),
-                const SizedBox(height: 16),
-                Text(
-                  e is ApiException ? e.message : 'Could not load this order.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: () => ref.invalidate(orderProvider(orderId)),
-                  child: const Text('Try again'),
-                ),
-              ],
-            ),
+      appBar: AppBar(title: const Text('Order details')),
+      body: RefreshIndicator(
+        onRefresh: () => ref.refresh(orderProvider(orderId).future),
+        child: order.when(
+          skipLoadingOnRefresh: true,
+          loading: () => ListView(
+            padding: const EdgeInsets.only(top: 12),
+            children: const [ListSkeleton(rows: 1, height: 90), ListSkeleton(rows: 1, height: 220), ListSkeleton(rows: 2, height: 120)],
           ),
+          error: (e, _) => ListView(children: [
+            EmptyState(
+              icon: Icons.cloud_off_rounded,
+              title: 'Could not load this order',
+              message: e is ApiException ? e.message : 'Please try again.',
+              actionLabel: 'Try again',
+              onAction: () => ref.invalidate(orderProvider(orderId)),
+            ),
+          ]),
+          data: (o) => _OrderBody(order: o, onResend: () => _resend(context, ref)),
         ),
-        data: (o) => _OrderBody(order: o, onResend: () => _resend(context, ref)),
       ),
     );
   }
-
-  Future<void> _resend(BuildContext context, WidgetRef ref) async {
-    try {
-      await ref.read(orderRepositoryProvider).resendConfirmation(orderId);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Confirmation email sent.')),
-        );
-      }
-    } on ApiException catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    }
-  }
 }
+
+String _grams(double w) => w == w.roundToDouble() ? w.toInt().toString() : w.toString();
 
 class _OrderBody extends StatelessWidget {
   const _OrderBody({required this.order, required this.onResend});
@@ -72,219 +64,234 @@ class _OrderBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    Widget section(String title, Widget child) => Padding(
+          padding: const EdgeInsets.only(top: Kv.gap),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            SectionHeader(title: title, padding: const EdgeInsets.fromLTRB(4, 0, 4, 8)),
+            child,
+          ]),
+        );
+    final a = order.address;
 
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(Kv.pad, 8, Kv.pad, 32),
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(order.invoiceNumber ?? '#${order.shortId}',
-                  style: theme.textTheme.titleLarge),
-            ),
-            OrderStatusChip(status: order.status),
-          ],
-        ),
-        const SizedBox(height: 20),
-        if (order.status == OrderStatus.cancelled)
-          Card(
-            color: theme.colorScheme.errorContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'This order was cancelled. Any payment made will be refunded.',
-                style: TextStyle(color: theme.colorScheme.onErrorContainer),
+        KvCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(order.invoiceNumber ?? 'Order #${order.shortId}',
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                  if (order.createdAt != null)
+                    Text('Placed on ${formatOrderDate(order.createdAt!)}',
+                        style: const TextStyle(fontSize: 13, color: Kv.muted)),
+                ]),
               ),
-            ),
-          )
-        else
-          _StatusTimeline(status: order.status),
-        const SizedBox(height: 24),
-        Text('Items', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                for (final item in order.items)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(item.productName),
-                              Text(
-                                'Qty ${item.quantity}'
-                                '${item.weight == null ? '' : ' · ${item.weight} g'}',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text(formatInr(item.totalPrice)),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
+              OrderStatusChip(status: order.status),
+            ]),
+            const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Divider()),
+            if (order.status == OrderStatus.cancelled)
+              const Row(children: [
+                Icon(Icons.cancel_outlined, color: Kv.danger, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text('This order was cancelled. Any payment made will be refunded.',
+                      style: TextStyle(color: Kv.danger, fontSize: 13)),
+                ),
+              ])
+            else
+              _StatusTimeline(order: order),
+          ]),
         ),
-        const SizedBox(height: 24),
-        Text('Payment', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // These are the server's own stored figures. The web's order
-                // page back-derives them from a hardcoded 5% GST and claims
-                // free shipping, which disagrees with what was charged.
-                _row(context, 'Subtotal', formatInr(order.subtotal)),
-                if (order.couponDiscount > 0)
-                  _row(
-                    context,
-                    order.couponCode == null
-                        ? 'Coupon discount'
-                        : 'Coupon (${order.couponCode})',
-                    '−${formatInr(order.couponDiscount)}',
-                  ),
-                _row(context, 'GST', formatInr(order.taxAmount)),
-                _row(context, 'Delivery', formatInr(order.deliveryFee)),
-                if (order.giftWrapFee > 0) _row(context, 'Gift wrapping', formatInr(order.giftWrapFee)),
-                const Divider(height: 20),
-                _row(context, 'Total paid', formatInr(order.grandTotal), bold: true),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '${order.paymentMethodLabel} · ${order.paymentStatus}',
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
+        section(
+          'Items',
+          KvCard(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Column(children: [
+              for (final (i, item) in order.items.indexed) ...[
+                if (i > 0) const Divider(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(children: [
+                    ItemThumb(image: item.image, size: 56),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(item.productName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                        Text('Qty ${item.quantity}${item.weight == null ? '' : ' · ${_grams(item.weight!)} g'}',
+                            style: const TextStyle(fontSize: 12, color: Kv.muted)),
+                      ]),
+                    ),
+                    PriceText(item.totalPrice, size: 14),
+                  ]),
                 ),
               ],
+              if (order.giftWrapFee > 0) ...[
+                const Divider(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.redeem_rounded, color: Kv.gold, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(order.giftMessage == null ? 'Gift wrapped' : 'Gift wrapped · “${order.giftMessage}”',
+                          style: const TextStyle(fontSize: 13, color: Kv.muted)),
+                    ),
+                  ]),
+                ),
+              ],
+            ]),
+          ),
+        ),
+        section(
+          'Price details',
+          KvCard(
+            // The server's own stored figures. The web's order page back-derives
+            // them from a hardcoded 5% GST and claims free shipping.
+            child: PriceDetails(
+              lines: [
+                PriceLine.amount('Subtotal', order.subtotal),
+                if (order.couponDiscount > 0)
+                  PriceLine.amount(order.couponCode == null ? 'Coupon discount' : 'Coupon (${order.couponCode})',
+                      order.couponDiscount,
+                      discount: true),
+                PriceLine.amount('GST', order.taxAmount),
+                PriceLine.amount('Delivery', order.deliveryFee),
+                if (order.giftWrapFee > 0) PriceLine.amount('Gift wrap', order.giftWrapFee),
+              ],
+              totalLabel: 'Total paid',
+              total: order.grandTotal,
             ),
           ),
         ),
-        if (order.address != null) ...[
-          const SizedBox(height: 24),
-          Text('Delivery address', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(order.address!.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Text(order.address!.line1),
-                  Text('${order.address!.city}, ${order.address!.state} '
-                      '${order.address!.pincode}'),
-                  const SizedBox(height: 4),
-                  Text(order.address!.phone, style: theme.textTheme.bodySmall),
-                ],
-              ),
+        if (a != null)
+          section(
+            'Delivery address',
+            KvCard(
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.location_on_outlined, color: Kv.muted, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(a.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    Text('${a.line1}\n${a.city}, ${a.state} ${a.pincode}',
+                        style: const TextStyle(color: Kv.muted, fontSize: 13, height: 1.4)),
+                    if (a.phone.isNotEmpty) Text(a.phone, style: const TextStyle(color: Kv.muted, fontSize: 13)),
+                  ]),
+                ),
+              ]),
             ),
           ),
-        ],
-        const SizedBox(height: 24),
-        // The web's "Actions" card.
-        FilledButton.icon(
-          onPressed: () => context.push('/orders/${order.id}/invoice'),
-          icon: const Icon(Icons.download, size: 16),
-          label: const Text('Download Invoice'),
+        section(
+          'Payment',
+          KvCard(
+            child: Row(children: [
+              const Icon(Icons.credit_card_rounded, color: Kv.muted, size: 22),
+              const SizedBox(width: 12),
+              Expanded(child: Text(order.paymentMethodLabel, style: const TextStyle(fontWeight: FontWeight.w500))),
+              if (order.paymentStatus.isNotEmpty)
+                StatusPill(
+                  order.paymentStatus[0].toUpperCase() + order.paymentStatus.substring(1),
+                  tone: order.paymentStatus.toLowerCase() == 'paid' ? PillTone.success : PillTone.warning,
+                ),
+            ]),
+          ),
         ),
-        const SizedBox(height: 8),
-        OutlinedButton(
-          onPressed: () => context.push('/contact'),
-          child: const Text('Need Help?'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: onResend,
-          icon: const Icon(Icons.mail_outline),
-          label: const Text('Resend confirmation email'),
-        ),
+        const SizedBox(height: Kv.gap),
+        MenuGroup(children: [
+          MenuRow(
+            icon: Icons.download_rounded,
+            title: 'Download invoice',
+            onTap: () => context.push('/orders/${order.id}/invoice'),
+          ),
+          if (order.status == OrderStatus.delivered)
+            MenuRow(
+              icon: Icons.assignment_return_outlined,
+              title: 'Request a return',
+              subtitle: 'Damaged, wrong item or changed your mind',
+              onTap: () => openRequestReturn(context, order),
+            ),
+          MenuRow(icon: Icons.support_agent_outlined, title: 'Need help?', onTap: () => context.push('/contact')),
+          MenuRow(
+            icon: Icons.mail_outline_rounded,
+            title: 'Resend confirmation email',
+            trailing: const SizedBox.shrink(),
+            onTap: onResend,
+          ),
+        ]),
       ],
-    );
-  }
-
-  Widget _row(BuildContext context, String label, String value, {bool bold = false}) {
-    final theme = Theme.of(context);
-    final style = bold
-        ? theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)
-        : theme.textTheme.bodyMedium;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(child: Text(label, style: style)),
-          Text(value, style: style),
-        ],
-      ),
     );
   }
 }
 
-/// Four-step fulfilment timeline. There are no courier or tracking fields on
+/// Four-step fulfilment stepper. There are no courier or tracking fields on
 /// the order — `deliveredAt` is the only timestamp beyond created/updated — so
 /// this reflects status alone and promises nothing more.
 class _StatusTimeline extends StatelessWidget {
-  const _StatusTimeline({required this.status});
+  const _StatusTimeline({required this.order});
 
-  final OrderStatus status;
+  final Order order;
 
   static const _steps = [
-    (OrderStatus.pending, Icons.receipt_long_outlined),
-    (OrderStatus.processing, Icons.inventory_2_outlined),
-    (OrderStatus.shipped, Icons.local_shipping_outlined),
-    (OrderStatus.delivered, Icons.check_circle_outline),
+    (OrderStatus.pending, 'We’ve received your order'),
+    (OrderStatus.processing, 'Hallmarking and packing'),
+    (OrderStatus.shipped, 'Insured and on its way'),
+    (OrderStatus.delivered, 'Delivered to you'),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final current = status.stepIndex;
+    final current = order.status.stepIndex;
+    String detail(int i) => switch (i) {
+          0 when order.createdAt != null => formatOrderDate(order.createdAt!),
+          3 when order.deliveredAt != null => formatOrderDate(order.deliveredAt!),
+          _ => _steps[i].$2,
+        };
 
-    return Row(
-      children: [
-        for (var i = 0; i < _steps.length; i++) ...[
-          Expanded(
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: i <= current ? scheme.primary : scheme.surfaceContainerHighest,
-                  child: Icon(
-                    _steps[i].$2,
-                    size: 18,
-                    color: i <= current ? scheme.onPrimary : scheme.outline,
+    return Column(children: [
+      for (var i = 0; i < _steps.length; i++)
+        IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            SizedBox(
+              width: 24,
+              child: Column(children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i <= current ? Kv.blue : Kv.surface,
+                    border: Border.all(color: i <= current ? Kv.blue : Kv.line, width: 2),
                   ),
+                  child: i <= current ? const Icon(Icons.check_rounded, size: 14, color: Colors.white) : null,
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  _steps[i].$1.label,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: i <= current ? scheme.onSurface : scheme.outline,
-                      ),
-                ),
-              ],
+                if (i < _steps.length - 1)
+                  Expanded(
+                    child: Container(width: 2, color: i < current ? Kv.blue : Kv.line),
+                  ),
+              ]),
             ),
-          ),
-        ],
-      ],
-    );
+            const SizedBox(width: 14),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: i < _steps.length - 1 ? 18 : 0, top: 1),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(_steps[i].$1.label,
+                      style: TextStyle(
+                        fontWeight: i == current ? FontWeight.w700 : FontWeight.w500,
+                        color: i <= current ? Kv.ink : Kv.subtle,
+                      )),
+                  Text(detail(i), style: TextStyle(fontSize: 12, color: i <= current ? Kv.muted : Kv.subtle)),
+                ]),
+              ),
+            ),
+          ]),
+        ),
+    ]);
   }
 }

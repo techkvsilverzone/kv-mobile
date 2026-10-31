@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_session.dart';
-import '../savings/application/installment_payer.dart' show showToast;
+import '../../core/ui/kv_ui.dart';
 
 /// Product ids from `GET /wishlist`, which may be a bare list, `{items}` or
 /// `{data}`, each item `{product: {...}}` (kv-ui services/wishlist.ts).
@@ -44,7 +45,7 @@ final wishlistIdsProvider = FutureProvider<List<String>>((ref) async {
 Future<void> toggleWishlist(BuildContext context, WidgetRef ref,
     {required String productId, required String productName}) async {
   if (!ref.read(authSessionProvider).isAuthenticated) {
-    showToast(context, 'Login Required', 'Please login to save products to your wishlist.');
+    showKvToast(context, 'Sign in to save favourites', error: true);
     context.push('/login');
     return;
   }
@@ -54,13 +55,15 @@ Future<void> toggleWishlist(BuildContext context, WidgetRef ref,
     wishlisted ? await repo.remove(productId) : await repo.add(productId);
     ref.invalidate(wishlistIdsProvider);
     if (context.mounted) {
-      showToast(context, wishlisted ? 'Removed from Wishlist' : 'Added to Wishlist',
-          '$productName has been ${wishlisted ? 'removed from' : 'added to'} your wishlist.');
+      HapticFeedback.lightImpact();
+      showKvToast(context, wishlisted ? 'Removed from wishlist' : 'Saved to wishlist',
+          message: productName,
+          actionLabel: wishlisted ? null : 'View',
+          onAction: wishlisted ? null : () => context.push('/wishlist'));
     }
   } catch (_) {
     if (context.mounted) {
-      showToast(context, 'Wishlist Update Failed', 'Unable to update wishlist right now. Please try again.',
-          error: true);
+      showKvToast(context, "Couldn't update your wishlist", message: 'Please try again.', error: true);
     }
   }
 }
@@ -82,7 +85,6 @@ class _WishlistButtonState extends ConsumerState<WishlistButton> {
   @override
   Widget build(BuildContext context) {
     final on = ref.watch(wishlistIdsProvider).valueOrNull?.contains(widget.productId) ?? false;
-    final scheme = Theme.of(context).colorScheme;
     return IconButton(
       tooltip: on ? 'Remove from wishlist' : 'Add to wishlist',
       iconSize: widget.size,
@@ -93,7 +95,7 @@ class _WishlistButtonState extends ConsumerState<WishlistButton> {
               await toggleWishlist(context, ref, productId: widget.productId, productName: widget.productName);
               if (mounted) setState(() => _busy = false);
             },
-      icon: Icon(on ? Icons.favorite : Icons.favorite_border, color: on ? scheme.error : null),
+      icon: Icon(on ? Icons.favorite : Icons.favorite_border, color: on ? Kv.danger : Kv.ink),
     );
   }
 }

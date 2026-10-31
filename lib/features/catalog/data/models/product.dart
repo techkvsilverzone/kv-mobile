@@ -1,3 +1,4 @@
+import '../../../../core/config/env.dart';
 import '../../../../core/pricing/pricing.dart';
 
 /// A size/weight option. Variants have **no `_id`** server-side (`{_id: false}`),
@@ -37,6 +38,12 @@ class ProductVariant {
 /// Product images are **not URLs**. Each entry is
 /// `{variantName, imageBase64, sortOrder}`, where `imageBase64` holds either a
 /// base64 data URI or a plain URL string — callers must handle both.
+/// `https://host/api/v1` → `https://host`.
+String resolveApiOrigin(String apiBaseUrl) {
+  final u = Uri.tryParse(apiBaseUrl);
+  return u == null || u.host.isEmpty ? '' : u.replace(path: '', query: null, fragment: null).toString().replaceAll(RegExp(r'/$'), '');
+}
+
 class ProductImage {
   const ProductImage({required this.data, required this.sortOrder, this.variantName});
 
@@ -44,7 +51,12 @@ class ProductImage {
   final int sortOrder;
   final String? variantName;
 
-  bool get isRemote => data.startsWith('http://') || data.startsWith('https://');
+  /// A URL to load: absolute, or a server path ("/images/products/…") resolved
+  /// against the API's origin (as the web's `normalizeImageSrc` does).
+  bool get isRemote => data.startsWith('http://') || data.startsWith('https://') || data.startsWith('/');
+
+  /// [data] as a loadable URL when [isRemote].
+  String get url => data.startsWith('/') ? '${resolveApiOrigin(Env.apiBaseUrl)}$data' : data;
 
   static ProductImage? tryFromJson(dynamic raw) {
     if (raw is String) {
@@ -81,6 +93,11 @@ class Product {
     this.isNew = false,
     this.makingCharge,
     this.wastage,
+    this.makingCharges,
+    this.makingChargePercent,
+    this.makingChargePerGram,
+    this.serverRatePerGram,
+    this.serverPurityFraction,
   });
 
   /// `_id` — products expose no `id` alias, unlike addresses and metal rates.
@@ -115,6 +132,14 @@ class Product {
   /// writes null for fixed-price products.
   final ProductCharge? makingCharge;
   final ProductCharge? wastage;
+
+  /// Legacy making-charge fields (null = not set) and the rate/purity the server
+  /// priced with — inputs to the server-identical price in [toPricingInput].
+  final double? makingCharges;
+  final double? makingChargePercent;
+  final double? makingChargePerGram;
+  final double? serverRatePerGram;
+  final double? serverPurityFraction;
 
   final List<ProductImage> images;
   final List<ProductVariant> variants;
@@ -157,6 +182,11 @@ class Product {
       purity: json['purity']?.toString(),
       makingCharge: _chargeFromJson(json['makingCharge']),
       wastage: _chargeFromJson(json['wastage']),
+      makingCharges: _toDouble(json['makingCharges']),
+      makingChargePercent: _toDouble(json['makingChargePercent']),
+      makingChargePerGram: _toDouble(json['makingChargePerGram']),
+      serverRatePerGram: json['pricing'] is Map ? _toDouble((json['pricing'] as Map)['ratePerGram']) : null,
+      serverPurityFraction: json['pricing'] is Map ? _toDouble((json['pricing'] as Map)['purityFraction']) : null,
       images: images,
       variants: variants,
       stockAvailable: (json['stockAvailable'] as num?)?.toInt() ?? 0,
@@ -172,8 +202,14 @@ class Product {
         isFixedPrice: isFixedPrice,
         weightInGrams: weightInGrams > 0 ? weightInGrams : null,
         purity: purity,
+        material: material,
         makingCharge: makingCharge,
         wastage: wastage,
+        makingCharges: makingCharges,
+        makingChargePercent: makingChargePercent,
+        makingChargePerGram: makingChargePerGram,
+        serverRatePerGram: serverRatePerGram,
+        serverPurityFraction: serverPurityFraction,
       );
 
   static double? _toDouble(dynamic v) {

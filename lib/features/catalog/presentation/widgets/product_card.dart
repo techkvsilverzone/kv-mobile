@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/format/currency.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/pricing/pricing.dart';
+import '../../../../core/ui/kv_ui.dart';
 import '../../../cart/application/cart_controller.dart';
-import '../../../savings/application/installment_payer.dart' show showToast;
 import '../../../wishlist/wishlist.dart';
 import '../../data/models/product.dart';
 import 'product_image.dart';
 
-/// Grid tile, as kv-ui ProductCard.tsx: image carousel with New / Sale / Out of
-/// Stock badges and quick cart + wishlist actions (always shown — a phone has no
-/// hover), then category, serif name, live pre-GST price and variant weights.
+/// Product tile: image with wishlist heart and badges, then name, weight,
+/// live pre-GST price and a quick-add button.
+/// Height of everything below the square image in a [ProductCard].
+const productCardInfoHeight = 108.0;
+
 class ProductCard extends ConsumerWidget {
   const ProductCard({super.key, required this.product, required this.rates, required this.onTap});
 
@@ -20,165 +23,96 @@ class ProductCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final muted = scheme.onSurfaceVariant;
     final pricing = computeProductPricing(product.toPricingInput(), rates);
-    final weights = product.variants.map((v) => v.weight.trim()).where((w) => w.isNotEmpty).join(' / ');
+    final weights = product.variants.map((v) => v.weight.trim()).where((w) => w.isNotEmpty).toList();
+    final weightLine = !product.isFixedPrice && weights.isNotEmpty
+        ? (weights.length > 2 ? '${weights.first} – ${weights.last}' : weights.join(' · '))
+        : (product.weightInGrams > 0 ? '${_trim(product.weightInGrams)} g' : product.material ?? '');
 
     void addToCart() {
-      if (!product.inStock) {
-        showToast(context, 'Out of Stock', '${product.name} is currently unavailable.', error: true);
-        return;
-      }
+      if (!product.inStock) return;
+      HapticFeedback.lightImpact();
       ref.read(cartProvider.notifier).add(product, unitPrice: pricing.preGstPrice);
-      showToast(context, 'Added to Cart', '${product.name} has been added to your cart.');
+      showKvToast(context, 'Added to cart',
+          message: product.name, actionLabel: 'View', onAction: () => context.go('/cart'));
     }
 
-    Widget badge(String text, Color bg, Color fg) => Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-          child: Text(text.toUpperCase(),
-              style: TextStyle(fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.w500, color: fg)),
-        );
-
-    Widget action(Widget child) => Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: scheme.surface.withValues(alpha: 0.9),
-            shape: BoxShape.circle,
-            boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 8)],
-          ),
-          child: child,
-        );
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    return Semantics(
+      button: true,
+      label: product.name,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           AspectRatio(
             aspectRatio: 1,
-            child: Container(
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: scheme.secondary.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outline.withValues(alpha: 0.6)),
-              ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(Kv.radiusSm),
               child: Stack(fit: StackFit.expand, children: [
-                _Carousel(images: product.images),
+                Container(color: const Color(0xFFEFF1F4)),
+                ProductImageView(image: product.primaryImage, decodeWidth: 260),
+                if (!product.inStock) Container(color: Colors.white.withValues(alpha: 0.55)),
                 Positioned(
-                  top: 12,
-                  left: 12,
+                  top: 8,
+                  left: 8,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    if (product.isNew) badge('New', scheme.primary, scheme.onPrimary),
-                    if (product.isSale) badge('Sale', scheme.error, scheme.onError),
-                    if (!product.inStock) badge('Out of Stock', scheme.surface.withValues(alpha: 0.9), muted),
+                    if (!product.inStock)
+                      const StatusPill('Sold out')
+                    else if (product.isSale)
+                      const StatusPill('Sale', tone: PillTone.danger)
+                    else if (product.isNew)
+                      const StatusPill('New', tone: PillTone.info),
                   ]),
                 ),
                 Positioned(
-                  bottom: 12,
-                  left: 0,
-                  right: 0,
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    action(IconButton(
-                      iconSize: 16,
-                      tooltip: 'Add ${product.name} to cart',
-                      onPressed: product.inStock ? addToCart : null,
-                      icon: const Icon(Icons.shopping_cart_outlined),
-                    )),
-                    const SizedBox(width: 8),
-                    action(WishlistButton(productId: product.id, productName: product.name, size: 16)),
-                  ]),
+                  top: 4,
+                  right: 4,
+                  child: Material(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    shape: const CircleBorder(),
+                    child: SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: WishlistButton(productId: product.id, productName: product.name, size: 18),
+                    ),
+                  ),
                 ),
               ]),
             ),
           ),
-          const SizedBox(height: 12),
-          Text((product.material ?? '').toUpperCase(),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10, letterSpacing: 1.8, color: muted)),
-          const SizedBox(height: 2),
-          Text(product.name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontFamily: 'PlayfairDisplay', fontSize: 17, fontWeight: FontWeight.w500, color: scheme.onSurface)),
-          const SizedBox(height: 4),
-          Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 12, children: [
-            Text(formatInr(pricing.preGstPrice),
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: 0.4)),
-            if ((product.originalPrice ?? 0) != 0)
-              Text(formatInr(product.originalPrice!),
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: muted,
-                      decoration: TextDecoration.lineThrough,
-                      decorationColor: muted.withValues(alpha: 0.5))),
-          ]),
-          if (!product.isFixedPrice && weights.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(weights,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: muted, letterSpacing: 0.4)),
-          ],
-        ],
+          const SizedBox(height: 10),
+          // Cards sit in fixed-height grid cells: name and weight on top, price pinned
+          // to the bottom so prices line up across a row whatever the name length.
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text(product.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: Kv.ink)),
+              const SizedBox(height: 2),
+              Text(weightLine,
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Kv.muted)),
+              const Spacer(),
+              Row(children: [
+                Expanded(child: PriceText(pricing.preGstPrice, original: product.originalPrice, size: 15)),
+                SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: IconButton.filledTonal(
+                    padding: EdgeInsets.zero,
+                    tooltip: 'Add ${product.name} to cart',
+                    style: IconButton.styleFrom(backgroundColor: Kv.blueSoft, foregroundColor: Kv.blue),
+                    onPressed: product.inStock ? addToCart : null,
+                    icon: const Icon(Icons.add_rounded, size: 20),
+                  ),
+                ),
+              ]),
+            ]),
+          ),
+        ]),
       ),
     );
   }
-}
 
-/// Swipeable image gallery with dots (kv-ui ProductImageCarousel).
-class _Carousel extends StatefulWidget {
-  const _Carousel({required this.images});
-  final List<ProductImage> images;
-
-  @override
-  State<_Carousel> createState() => _CarouselState();
-}
-
-class _CarouselState extends State<_Carousel> {
-  int _page = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final images = widget.images;
-    // Grid tiles are ~240 logical px at most, so decoding wider is wasted memory.
-    if (images.length <= 1) {
-      return ProductImageView(image: images.firstOrNull, decodeWidth: 240);
-    }
-    return Stack(fit: StackFit.expand, children: [
-      PageView.builder(
-        itemCount: images.length,
-        onPageChanged: (i) => setState(() => _page = i),
-        itemBuilder: (_, i) => ProductImageView(image: images[i], decodeWidth: 240),
-      ),
-      Positioned(
-        bottom: 60,
-        left: 0,
-        right: 0,
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          for (var i = 0; i < images.length; i++)
-            Container(
-              width: 6,
-              height: 6,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: i == _page ? 0.95 : 0.5),
-              ),
-            ),
-        ]),
-      ),
-    ]);
-  }
+  static String _trim(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
 }

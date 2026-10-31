@@ -7,7 +7,7 @@ import 'package:kv_silver_mobile/core/storage/secure_token_storage.dart';
 import 'package:kv_silver_mobile/features/auth/data/auth_repository.dart';
 import 'package:kv_silver_mobile/core/router/app_router.dart';
 import 'package:kv_silver_mobile/main.dart';
-import 'package:kv_silver_mobile/features/store_config/marquee_bar.dart';
+import 'package:kv_silver_mobile/app/splash_screen.dart';
 import '../../support/fake_auth_repository.dart';
 import '../../support/fake_secure_storage_client.dart';
 
@@ -23,7 +23,7 @@ void main() {
   ProviderContainer makeContainer() {
     final container = ProviderContainer(
       overrides: [
-        marqueeAnimatedProvider.overrideWithValue(false),
+        splashAnimatedProvider.overrideWithValue(false),
         secureTokenStorageProvider.overrideWithValue(storage),
         authRepositoryProvider.overrideWithValue(repo),
       ],
@@ -52,8 +52,8 @@ void main() {
     final container = makeContainer();
     await pumpApp(tester, container);
 
-    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
-    expect(find.text('Welcome Back'), findsNothing);
+    expect(find.text('Shop by category'), findsOneWidget);
+    expect(find.text('Welcome back'), findsNothing);
     expect(repo.getMeCalls, 0);
   });
 
@@ -64,22 +64,22 @@ void main() {
 
     await pumpApp(tester, container);
 
-    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
+    expect(find.text('Shop by category'), findsOneWidget);
     expect(repo.getMeCalls, 1);
   });
 
   testWidgets('a protected page sends a guest to login, then back there after signing in', (tester) async {
     final container = makeContainer();
     await pumpApp(tester, container);
-    await go(tester, container, '/profile');
-    expect(find.text('Welcome Back'), findsOneWidget);
+    await go(tester, container, '/orders');
+    expect(find.text('Welcome back'), findsOneWidget);
 
     await container
         .read(authSessionProvider.notifier)
         .setSession(user: buildUser(name: 'Ravi'), token: 'token-123');
     await tester.pumpAndSettle();
 
-    expect(find.text('My Account'), findsOneWidget);
+    expect(find.text('My orders'), findsOneWidget);
   });
 
   testWidgets('signing in from the login screen redirects to home', (tester) async {
@@ -92,7 +92,7 @@ void main() {
         .setSession(user: buildUser(name: 'Ravi'), token: 'token-123');
     await tester.pumpAndSettle();
 
-    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
+    expect(find.text('Shop by category'), findsOneWidget);
   });
 
   testWidgets('clearing the session on a protected page bounces back to login', (tester) async {
@@ -104,7 +104,7 @@ void main() {
     await container.read(authSessionProvider.notifier).clearSession();
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.text('Welcome back'), findsOneWidget);
   });
 
   testWidgets('signup is reachable while signed out', (tester) async {
@@ -112,10 +112,10 @@ void main() {
     await pumpApp(tester, container);
     await go(tester, container, '/login');
 
-    await tester.tap(find.widgetWithText(TextButton, 'Sign up'));
+    await tester.tap(find.widgetWithText(TextButton, 'Create account'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Join KV Silver Zone for exclusive offers'), findsOneWidget);
+    expect(find.text('Join KV Silver Zone for exclusive offers.'), findsOneWidget);
   });
 
   testWidgets('an unreachable server holds on splash with a retry instead of logging out',
@@ -136,7 +136,7 @@ void main() {
 
     expect(find.text('Unable to reach the server.'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
-    expect(find.text('Welcome Back'), findsNothing);
+    expect(find.text('Welcome back'), findsNothing);
 
     // The token survives so the retry can succeed.
     expect(await storage.readToken(), 'good-token');
@@ -146,6 +146,6 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Try again'));
     await tester.pumpAndSettle();
 
-    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
+    expect(find.text('Shop by category'), findsOneWidget);
   });
 }

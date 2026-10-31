@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../core/widgets/links.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/widgets/page_header.dart';
+import '../../../core/ui/kv_ui.dart';
+import '../../../core/widgets/links.dart';
 
 /// Category → (question, answer) pairs, verbatim from kv-ui `pages/FAQ.tsx`.
 const _faqData = <(String, List<(String, String)>)>[
@@ -177,8 +177,8 @@ const _faqData = <(String, List<(String, String)>)>[
   ),
 ];
 
-/// Port of kv-ui `pages/FAQ.tsx`: one category shown at a time, chosen from
-/// the category list (the web's sidebar), each answer behind an accordion.
+/// Port of kv-ui `pages/FAQ.tsx`: one category at a time, picked from a chip row,
+/// each answer behind an expandable tile; "Still need help?" at the end.
 class FaqScreen extends StatefulWidget {
   const FaqScreen({super.key});
 
@@ -191,134 +191,111 @@ class _FaqScreenState extends State<FaqScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final muted = cs.onSurfaceVariant;
-    final boxHeading = theme.textTheme.titleLarge
-        ?.copyWith(fontSize: 16, fontWeight: FontWeight.w500, color: cs.primary);
-    final small = theme.textTheme.bodySmall?.copyWith(color: muted);
     final items = _faqData.firstWhere((c) => c.$1 == _active).$2;
 
     return Scaffold(
       appBar: AppBar(title: const Text('FAQ')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 64),
-        children: [
-          const PageHeader(
-            eyebrow: 'Help Center',
-            title: 'Frequently Asked\nQuestions',
-            subtitle: 'Everything you need to know about our silver, shopping experience, and the '
-                'KV Silver Zone promise.',
+      body: ListView(padding: const EdgeInsets.only(bottom: 32), children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(Kv.pad, 8, Kv.pad, 16),
+          child: Text(
+            'Everything you need to know about our silver, shopping experience, and the KV Silver Zone promise.',
+            style: TextStyle(color: Kv.muted, fontSize: 14, height: 1.45),
           ),
-          const SizedBox(height: 24),
-          Text('CATEGORIES',
-              style: theme.textTheme.labelSmall?.copyWith(color: muted, letterSpacing: 2)),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final (category, _) in _faqData)
-                ChoiceChip(
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: Kv.pad),
+          child: Row(children: [
+            for (final (category, _) in _faqData)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
                   label: Text(category),
                   selected: category == _active,
+                  showCheckmark: false,
                   onSelected: (_) => setState(() => _active = category),
                 ),
-            ],
-          ),
-          const SizedBox(height: 40),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              border: Border.all(color: cs.outline),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Still have questions?', style: boxHeading),
-                const SizedBox(height: 4),
-                Text('Our team is here to help.', style: small?.copyWith(fontWeight: FontWeight.w300)),
-                const SizedBox(height: 16),
-                Row(children: [
-                  Icon(Icons.phone_outlined, size: 14, color: muted),
-                  const SizedBox(width: 8),
-                  InkWell(onTap: () => openLink(storePhoneUri), child: Text('(+91) 88256 49680', style: small)),
-                ]),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Icon(Icons.mail_outline, size: 14, color: muted),
-                  const SizedBox(width: 8),
-                  InkWell(onTap: () => openLink(storeEmailUri), child: Text('kvszchennai@gmail.com', style: small)),
-                ]),
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: () => context.push('/contact'),
-                  icon: const Icon(Icons.chat_bubble_outline, size: 14),
-                  label: const Text('Open a support request'),
+              ),
+          ]),
+        ),
+        const SizedBox(height: 20),
+        SectionHeader(title: _active, subtitle: '${items.length} questions'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Kv.pad),
+          child: KvCard(
+            padding: EdgeInsets.zero,
+            child: Column(children: [
+              for (final (i, (question, answer)) in items.indexed) ...[
+                if (i > 0) const Divider(indent: 16, endIndent: 16),
+                ExpansionTile(
+                  // Keyed by question so switching category starts collapsed, as on web.
+                  key: ValueKey(question),
+                  shape: const Border(),
+                  collapsedShape: const Border(),
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                  iconColor: Kv.blue,
+                  collapsedIconColor: Kv.subtle,
+                  title: Text(question, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, height: 1.35)),
+                  expandedAlignment: Alignment.centerLeft,
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    Text(answer, style: const TextStyle(fontSize: 14, color: Kv.muted, height: 1.6)),
+                  ],
                 ),
               ],
-            ),
+            ]),
           ),
-          const SizedBox(height: 40),
-          Text(_active,
-              style: theme.textTheme.headlineSmall
-                  ?.copyWith(color: cs.primary, fontWeight: FontWeight.w400)),
-          const SizedBox(height: 24),
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: cs.outline),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                for (final (i, (question, answer)) in items.indexed) ...[
-                  if (i > 0) Divider(height: 1, color: cs.outline),
-                  ExpansionTile(
-                    // Keyed by question so switching category starts collapsed, as on web.
-                    key: ValueKey(question),
-                    shape: const Border(),
-                    collapsedShape: const Border(),
-                    title: Text(question,
-                        style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
-                    expandedAlignment: Alignment.centerLeft,
-                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                    children: [
-                      Text(answer,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(color: muted, fontWeight: FontWeight.w300, height: 1.6)),
-                    ],
+        ),
+        const SizedBox(height: Kv.gap),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Kv.pad),
+          child: KvCard(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Row(children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: Kv.blueSoft,
+                  child: Icon(Icons.support_agent_rounded, color: Kv.blue, size: 22),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Still need help?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    SizedBox(height: 2),
+                    Text('We respond to all enquiries within 4 business hours.',
+                        style: TextStyle(color: Kv.muted, fontSize: 13)),
+                  ]),
+                ),
+              ]),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => openLink(storePhoneUri),
+                    icon: const Icon(Icons.call_outlined, size: 18),
+                    label: const Text('Call'),
                   ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 40),
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: cs.secondaryContainer.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                Text("Can't find your answer?", textAlign: TextAlign.center, style: boxHeading),
-                const SizedBox(height: 4),
-                Text('We respond to all enquiries within 4 business hours.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: muted, fontWeight: FontWeight.w300)),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: () => context.push('/contact'),
-                  icon: const Icon(Icons.chat_bubble_outline, size: 14),
-                  label: const Text('CONTACT US', style: TextStyle(letterSpacing: 1.2)),
                 ),
-              ],
-            ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => openLink(storeEmailUri),
+                    icon: const Icon(Icons.mail_outline_rounded, size: 18),
+                    label: const Text('Email'),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: () => context.push('/contact'),
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                label: const Text('Contact us'),
+              ),
+            ]),
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 }

@@ -76,11 +76,12 @@ void main() {
         ),
         rates,
       );
+      // Server formula: weight × rate × purity (925 → 0.925).
       expect(result.computed, isTrue);
-      expect(result.metalValue, 900);
-      expect(result.makingCharge, 108);
+      expect(result.metalValue, 832.5);
+      expect(result.makingCharge, 99.9);
       expect(result.wastage, 100);
-      expect(result.preGstPrice, 1108);
+      expect(result.preGstPrice, 1032.4);
     });
 
     test('uses a gram override (selected variant weight) over the product weight', () {
@@ -97,7 +98,7 @@ void main() {
         gramsOverride: 20,
       );
       expect(result.grams, 20);
-      expect(result.preGstPrice, 1800);
+      expect(result.preGstPrice, 1665); // 20 × 90 × 0.925
     });
 
     test('keeps the listed price for a legacy product with rate + weight but no charges configured', () {
@@ -196,6 +197,48 @@ void main() {
     test('defaults discount and delivery to zero', () {
       final s = computeOrderSummary(const OrderSummaryInput(subtotal: 1000, gstPercent: 3));
       expect(s.total, 1030);
+    });
+  });
+
+  // The same cases as kv-api src/tests/pricing.service.test.ts, so app and server can't drift.
+  group('matches the server (PricingService.computeUnitPrice)', () {
+    ProductPricingInput p({
+      double price = 650, double grams = 10, String purity = '925', String? material,
+      double? percent, double? perGram, double? flat, ProductCharge? making, bool fixed = false,
+      double? serverRate,
+    }) =>
+        ProductPricingInput(
+          price: price, isFixedPrice: fixed, weightInGrams: grams, purity: purity, material: material,
+          makingCharge: making, makingChargePercent: percent, makingChargePerGram: perGram, makingCharges: flat,
+          serverRatePerGram: serverRate,
+        );
+    final at100 = [_rate(purity: '925', ratePerGram: 100)];
+
+    test('live = weight × rate × purity + making %', () {
+      expect(computeProductPricing(p(percent: 10), at100).preGstPrice, 1017.5);
+    });
+    test('making per gram', () {
+      expect(computeProductPricing(p(perGram: 50), at100).preGstPrice, 1425);
+    });
+    test('no charge at all → listed price (Wooden Aarathi)', () {
+      final r = computeProductPricing(p(grams: 4.2, purity: '999', serverRate: 230), const []);
+      expect(r.computed, isFalse);
+      expect(r.preGstPrice, 650);
+    });
+    test('an explicit 0 legacy charge still prices live, with the server rate and rounding', () {
+      final r = computeProductPricing(p(grams: 4.2, purity: '999', flat: 0, serverRate: 230), const []);
+      expect(r.computed, isTrue);
+      expect(r.preGstPrice, 965.03);
+    });
+    test('the server rate wins over today\'s rates; fixed price ignores both', () {
+      expect(computeProductPricing(p(percent: 0, serverRate: 200), at100).preGstPrice, 1850);
+      expect(computeProductPricing(p(fixed: true, percent: 10), at100).preGstPrice, 650);
+    });
+    test('purity defaults: silver 0.925, other materials 1', () {
+      expect(resolvePurityFraction(null, 'Silver'), 0.925);
+      expect(resolvePurityFraction('', 'Wood'), 1);
+      expect(resolvePurityFraction('92.5', null), 0.925);
+      expect(resolvePurityFraction('999', null), 0.999);
     });
   });
 }

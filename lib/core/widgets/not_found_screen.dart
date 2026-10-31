@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../ui/kv_ui.dart';
 
 /// kv-ui pages/NotFound.tsx — the router's error page.
 class NotFoundScreen extends StatelessWidget {
@@ -7,28 +8,17 @@ class NotFoundScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     return Scaffold(
-      backgroundColor: scheme.surfaceContainerHighest,
+      appBar: AppBar(),
       body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('404',
-                style: theme.textTheme.displaySmall
-                    ?.copyWith(fontWeight: FontWeight.w700, color: scheme.onSurface)),
-            const SizedBox(height: 16),
-            Text('Oops! Page not found',
-                style: theme.textTheme.titleLarge?.copyWith(color: scheme.onSurfaceVariant)),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () => context.go('/home'),
-              child: Text('Return to Home',
-                  style: TextStyle(
-                      color: scheme.primary, decoration: TextDecoration.underline)),
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: EmptyState(
+            icon: Icons.explore_off_outlined,
+            title: 'Page not found',
+            message: "This page doesn't exist or may have moved.",
+            actionLabel: 'Go to Home',
+            onAction: () => context.go('/home'),
+          ),
         ),
       ),
     );

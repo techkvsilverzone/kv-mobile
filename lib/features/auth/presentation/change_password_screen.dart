@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../savings/application/installment_payer.dart';
+import '../../../core/ui/kv_ui.dart';
 import '../application/auth_controller.dart';
+import 'widgets/code_field.dart' show buttonSpinner;
 
 /// kv-ui pages/ChangePassword.tsx. No current-password field, because
 /// `PUT /users/:id/password` does not ask for one; the route is behind auth.
@@ -23,6 +24,7 @@ String passwordErrorMessage(AuthSubmission r) => switch (r.statusCode) {
 class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
+  bool _obscure = true;
 
   @override
   void dispose() {
@@ -34,12 +36,12 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
   Future<void> _submit() async {
     final password = _passwordCtrl.text;
     if (password.trim().isEmpty) {
-      showToast(context, 'Password required', 'Please enter a new password.', error: true);
+      showKvToast(context, 'Password required', message: 'Please enter a new password.', error: true);
       return;
     }
     if (password != _confirmCtrl.text) {
-      showToast(context, 'Passwords do not match', 'Confirm password must match the new password.',
-          error: true);
+      showKvToast(context, 'Passwords do not match',
+          message: 'Confirm password must match the new password.', error: true);
       return;
     }
 
@@ -49,79 +51,61 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
     if (result.ok) {
       _passwordCtrl.clear();
       _confirmCtrl.clear();
-      showToast(context, 'Password changed', 'Your password has been updated successfully.');
+      showKvToast(context, 'Password changed', message: 'Your password has been updated.');
     } else {
-      showToast(context, 'Change password failed', passwordErrorMessage(result), error: true);
+      showKvToast(context, 'Change password failed', message: passwordErrorMessage(result), error: true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final busy = ref.watch(authControllerProvider);
-    final theme = Theme.of(context);
+    final eye = IconButton(
+      icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+      tooltip: _obscure ? 'Show password' : 'Hide password',
+      onPressed: () => setState(() => _obscure = !_obscure),
+    );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Change Password')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Change Password',
-                      style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 8),
-                  Text('Update your account password securely.',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: _passwordCtrl,
-                    enabled: !busy,
-                    obscureText: true,
-                    autofillHints: const [AutofillHints.newPassword],
-                    decoration: const InputDecoration(
-                      labelText: 'New Password',
-                      hintText: 'Enter new password',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _confirmCtrl,
-                    enabled: !busy,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Confirm New Password',
-                      hintText: 'Confirm new password',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: busy ? null : _submit,
-                    child: busy
-                        ? const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                  height: 16,
-                                  width: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2)),
-                              SizedBox(width: 8),
-                              Text('Updating...'),
-                            ],
-                          )
-                        : const Text('Update Password'),
-                  ),
-                ],
+      appBar: AppBar(title: const Text('Change password')),
+      bottomNavigationBar: BottomActionBar(
+        action: FilledButton(onPressed: busy ? null : _submit, child: busy ? buttonSpinner : const Text('Update password')),
+      ),
+      body: ListView(padding: const EdgeInsets.all(Kv.pad), children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(4, 4, 4, 16),
+          child: Text('Choose a strong password you don’t use anywhere else.',
+              style: TextStyle(color: Kv.muted, fontSize: 14)),
+        ),
+        KvCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            TextField(
+              controller: _passwordCtrl,
+              enabled: !busy,
+              obscureText: _obscure,
+              autofillHints: const [AutofillHints.newPassword],
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                labelText: 'New password',
+                prefixIcon: const Icon(Icons.lock_outline_rounded),
+                suffixIcon: eye,
               ),
             ),
-          ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _confirmCtrl,
+              enabled: !busy,
+              obscureText: _obscure,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => busy ? null : _submit(),
+              decoration: const InputDecoration(
+                labelText: 'Confirm new password',
+                prefixIcon: Icon(Icons.lock_outline_rounded),
+              ),
+            ),
+          ]),
         ),
-      ),
+      ]),
     );
   }
 }

@@ -1,22 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../core/auth/auth_session.dart';
 import '../../../core/format/currency.dart';
 import '../../../core/pricing/pricing.dart';
+import '../../../core/ui/kv_ui.dart';
 import '../../cart/application/cart_controller.dart';
+import '../../delivery/delivery_check.dart';
+import '../../recently_viewed/recently_viewed.dart';
+import '../../reviews/reviews.dart';
+import '../../reviews/reviews_page.dart';
+import '../../wishlist/wishlist.dart';
 import '../application/catalog_providers.dart';
 import '../data/models/product.dart';
-import 'widgets/product_image.dart';
-import '../../recently_viewed/recently_viewed.dart';
 import 'widgets/product_grid.dart';
-import '../../wishlist/wishlist.dart';
-import '../../savings/application/installment_payer.dart' show showToast;
-import '../../reviews/reviews.dart';
-import '../../../core/widgets/page_header.dart';
-import '../../../core/auth/auth_session.dart';
-import 'package:intl/intl.dart';
-import 'package:flutter/services.dart';
-import '../../delivery/delivery_check.dart';
+import 'widgets/product_image.dart';
+
+/// More variants than this open a sheet instead of a chip row.
+const _maxInlineVariants = 6;
 
 class ProductDetailScreen extends ConsumerStatefulWidget {
   const ProductDetailScreen({super.key, required this.productId});
@@ -24,7 +27,8 @@ class ProductDetailScreen extends ConsumerStatefulWidget {
   final String productId;
 
   @override
-  ConsumerState<ProductDetailScreen> createState() => _ProductDetailScreenState();
+  ConsumerState<ProductDetailScreen> createState() =>
+      _ProductDetailScreenState();
 }
 
 class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
@@ -32,33 +36,40 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   int _selectedVariant = 0;
   int _imagePage = 0;
   int _quantity = 1;
+  bool _descExpanded = false;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(recentlyViewedProvider.notifier).add(widget.productId));
+    Future.microtask(
+        () => ref.read(recentlyViewedProvider.notifier).add(widget.productId));
   }
 
   @override
   Widget build(BuildContext context) {
     final product = ref.watch(productProvider(widget.productId));
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Product')),
-      body: product.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _ErrorBody(
-          message: error is ApiException ? error.message : 'Could not load this product.',
-          onRetry: () => ref.invalidate(productProvider(widget.productId)),
+    return product.when(
+      loading: () => Scaffold(appBar: AppBar(), body: const _DetailSkeleton()),
+      error: (error, _) => Scaffold(
+        appBar: AppBar(),
+        body: Center(
+          child: EmptyState(
+            icon: Icons.cloud_off_rounded,
+            title: "Couldn't load this product",
+            message: error is ApiException
+                ? error.message
+                : 'Check your connection and try again.',
+            actionLabel: 'Try again',
+            onAction: () => ref.invalidate(productProvider(widget.productId)),
+          ),
         ),
-        data: _buildProduct,
       ),
+      data: _buildProduct,
     );
   }
 
   Widget _buildProduct(Product product) {
     final rates = ref.watch(silverRatesValueProvider);
-    final ratesAsync = ref.watch(silverRatesProvider);
     final gstPercent = ref.watch(gstPercentProvider).valueOrNull;
 
     final variants = product.variants;
@@ -69,363 +80,620 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     // The whole variant→price recompute: the variant's free-text weight is
     // parsed to grams and passed as the override. A null override falls through
     // to the product's own weight inside the engine.
-    final variantGrams = parseGrams(selected?.weight);
-    final pricing = computeProductPricing(
-      product.toPricingInput(),
-      rates,
-      gramsOverride: variantGrams,
-    );
+    final pricing = computeProductPricing(product.toPricingInput(), rates,
+        gramsOverride: parseGrams(selected?.weight));
 
     final showBreakdown = !product.isFixedPrice && pricing.computed;
     final displayWeight = (selected?.weight.isNotEmpty ?? false)
         ? selected!.weight
         : '${_trimZeros(product.weightInGrams)} g';
 
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final muted = scheme.onSurfaceVariant;
     final reviews = ref.watch(productReviewsProvider(product.id)).valueOrNull;
     final related = product.material == null
         ? const <Product>[]
-        : (ref.watch(productsInCategoryProvider(product.material!)).valueOrNull ?? const <Product>[])
+        : (ref
+                    .watch(productsInCategoryProvider(product.material!))
+                    .valueOrNull ??
+                const <Product>[])
             .where((p) => p.id != product.id)
-            .take(4)
+            .take(10)
             .toList();
     final original = product.originalPrice ?? 0;
-    Widget eyebrow(String t, {IconData? icon}) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(children: [
-            if (icon != null) ...[Icon(icon, size: 12, color: muted), const SizedBox(width: 6)],
-            Text(t.toUpperCase(), style: TextStyle(fontSize: 10, letterSpacing: 2, color: muted)),
-          ]),
-        );
+    final percentOff = original > 0
+        ? ((original - product.price) / original * 100).round()
+        : 0;
+    final width = MediaQuery.sizeOf(context).width;
 
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        Stack(children: [
-          _buildGallery(product),
-          if (product.isNew)
-            Positioned(top: 16, left: 16, child: _badge('NEW', Colors.white, Colors.black)),
-          if (product.isSale)
-            Positioned(top: 16, left: product.isNew ? 64 : 16, child: _badge('SALE', scheme.error, Colors.white)),
-        ]),
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
+    void openReviews() => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) =>
+            ReviewsPage(productId: product.id, productName: product.name)));
+
+    void addToCart() {
+      HapticFeedback.mediumImpact();
+      // The price banked into the cart line is the one shown, for the chosen
+      // size — the server re-prices at checkout anyway.
+      ref.read(cartProvider.notifier).add(product,
+          unitPrice: pricing.preGstPrice,
+          variant: selected,
+          quantity: _quantity);
+      showKvToast(context, 'Added to cart',
+          message: '$_quantity × ${product.name}',
+          actionLabel: 'View cart',
+          onAction: () => context.go('/cart'));
+    }
+
+    Widget gap([double h = Kv.gap]) => SizedBox(height: h);
+    const pad = EdgeInsets.symmetric(horizontal: Kv.pad);
+
+    return Scaffold(
+      bottomNavigationBar: BottomActionBar(
+        leading: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              eyebrow(product.material ?? ''),
-              Text(product.name,
-                  style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w400)),
-              if (reviews != null && reviews.totalReviews > 0) ...[
-                const SizedBox(height: 12),
-                Row(children: [
-                  StarRow(rating: reviews.averageRating.round(), size: 16),
-                  const SizedBox(width: 8),
-                  Text('(${reviews.totalReviews} review${reviews.totalReviews != 1 ? 's' : ''})',
-                      style: TextStyle(fontSize: 14, color: muted)),
-                ]),
-              ],
-              const SizedBox(height: 16),
-              Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 16, children: [
-                Text(formatInr(pricing.preGstPrice),
-                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
-                if (original != 0) ...[
-                  Text(formatInr(original),
-                      style: TextStyle(fontSize: 18, color: muted, decoration: TextDecoration.lineThrough)),
-                  Text('${((original - product.price) / original * 100).round()}% off',
-                      style: const TextStyle(fontSize: 14, color: Color(0xFF16A34A), fontWeight: FontWeight.w500)),
-                ],
-              ]),
-              if (!product.isFixedPrice && !pricing.computed) ...[
-                const SizedBox(height: 6),
-                _PriceBasisNotice(
-                  isLoading: ratesAsync.isLoading,
-                  failed: ratesAsync.hasError,
-                  onRetry: () => ref.invalidate(silverRatesProvider),
-                ),
-              ],
-              const SizedBox(height: 24),
-              if (showBreakdown) ...[
-                _PriceBreakdownCard(pricing: pricing, gstPercent: gstPercent),
-                const SizedBox(height: 24),
-              ],
-              if ((product.description ?? '').isNotEmpty) ...[
-                Text(product.description!, style: TextStyle(color: muted, height: 1.6)),
-                const SizedBox(height: 24),
-              ],
-              if (variants.isNotEmpty) ...[
-                eyebrow('Select Size'),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: List.generate(variants.length, (i) {
-                    final v = variants[i];
-                    final on = i == _selectedVariant;
-                    return InkWell(
-                      onTap: () => setState(() => _selectedVariant = i),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        constraints: const BoxConstraints(minWidth: 48),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: on ? scheme.primary.withValues(alpha: 0.1) : null,
-                          border: Border.all(color: on ? scheme.primary : scheme.outline),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          Text(v.displayLabel,
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  color: on ? scheme.primary : null,
-                                  fontWeight: on ? FontWeight.w500 : FontWeight.w400)),
-                          if (v.label.isNotEmpty && v.weight.isNotEmpty)
-                            Text(v.weight, style: TextStyle(fontSize: 10, color: muted)),
-                        ]),
-                      ),
-                    );
-                  }),
-                ),
-                const SizedBox(height: 24),
-              ],
-              _SpecificationsCard(product: product, displayWeight: displayWeight, selected: selected),
-              const SizedBox(height: 24),
-              eyebrow('Check Delivery', icon: Icons.place_outlined),
-              const _PincodeChecker(),
-              const SizedBox(height: 24),
-              Row(children: [
-                Container(
-                  decoration: BoxDecoration(
-                      border: Border.all(color: scheme.outline), borderRadius: BorderRadius.circular(6)),
-                  child: Row(children: [
-                    IconButton(
-                      tooltip: 'Decrease quantity',
-                      onPressed: () => setState(() => _quantity = _quantity > 1 ? _quantity - 1 : 1),
-                      icon: const Icon(Icons.remove, size: 16),
-                    ),
-                    SizedBox(
-                        width: 32,
-                        child: Text('$_quantity',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
-                    IconButton(
-                      tooltip: 'Increase quantity',
-                      onPressed: () => setState(() => _quantity++),
-                      icon: const Icon(Icons.add, size: 16),
-                    ),
-                  ]),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SizedBox(
-                    height: 48,
-                    child: FilledButton.icon(
-                      onPressed: product.inStock
-                          ? () {
-                              // The price banked into the cart line is the one shown, for
-                              // the chosen size — the server re-prices at checkout anyway.
-                              ref.read(cartProvider.notifier).add(product,
-                                  unitPrice: pricing.preGstPrice, variant: selected, quantity: _quantity);
-                              showToast(context, 'Added to Cart', '${_quantity}x ${product.name} added to cart.');
-                            }
-                          : null,
-                      icon: const Icon(Icons.shopping_cart_outlined, size: 16),
-                      label: Text(product.inStock ? 'Add to Cart' : 'Out of Stock'),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                      border: Border.all(color: scheme.outline), borderRadius: BorderRadius.circular(8)),
-                  child: WishlistButton(productId: product.id, productName: product.name),
-                ),
-              ]),
-              const SizedBox(height: 24),
-              const Divider(),
-              const SizedBox(height: 16),
-              Row(children: [
-                for (final (icon, label) in const [
-                  (Icons.shield_outlined, 'BIS Hallmarked'),
-                  (Icons.local_shipping_outlined, 'Insured Shipping'),
-                  (Icons.replay, '7-Day Returns'),
-                ])
-                  Expanded(
-                    child: Row(children: [
-                      Icon(icon, size: 16, color: muted),
-                      const SizedBox(width: 6),
-                      Flexible(child: Text(label, style: TextStyle(fontSize: 12, color: muted))),
-                    ]),
-                  ),
-              ]),
-              const SizedBox(height: 32),
-              _DetailTabs(productId: product.id, reviews: reviews),
-              if (related.isNotEmpty) ...[
-                const SizedBox(height: 48),
-                const PageHeader(eyebrow: 'You May Also Like', title: 'Related Products'),
-              ],
-            ],
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(formatInr(pricing.preGstPrice * _quantity),
+                    style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3)),
+              ),
+              Text(product.inStock ? '+ GST at checkout' : 'Out of stock',
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      color: product.inStock ? Kv.subtle : Kv.danger)),
+            ]),
+        action: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (product.inStock) ...[
+            QuantityStepper(
+                compact: true,
+                value: _quantity,
+                onChanged: (v) => setState(() => _quantity = v)),
+            const SizedBox(width: 10),
+          ],
+          FilledButton(
+            onPressed: product.inStock ? addToCart : null,
+            style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 20)),
+            child: Text(product.inStock ? 'Add to cart' : 'Sold out'),
+          ),
+        ]),
+      ),
+      body: CustomScrollView(slivers: [
+        SliverAppBar(
+          pinned: true,
+          expandedHeight: width,
+          backgroundColor: Kv.surface,
+          leading: _RoundButton(
+            tooltip: 'Back',
+            icon: Icons.arrow_back_rounded,
+            onTap: () => context.canPop() ? context.pop() : context.go('/shop'),
+          ),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Material(
+                color: Colors.white.withValues(alpha: 0.92),
+                shape: const CircleBorder(),
+                child: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: WishlistButton(
+                        productId: product.id, productName: product.name)),
+              ),
+            ),
+          ],
+          flexibleSpace: FlexibleSpaceBar(
+            collapseMode: CollapseMode.pin,
+            background: _Gallery(
+              product: product,
+              page: _imagePage,
+              onPage: (i) => setState(() => _imagePage = i),
+            ),
           ),
         ),
-        if (related.isNotEmpty) ...[ProductGrid(products: related), const SizedBox(height: 32)],
-      ],
+        SliverToBoxAdapter(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            // Title + price
+            _Section(
+              padding: const EdgeInsets.fromLTRB(Kv.pad, 16, Kv.pad, 20),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if ((product.material ?? '').isNotEmpty)
+                      Text(product.material!,
+                          style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Kv.muted,
+                              fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 4),
+                    Text(product.name,
+                        style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            height: 1.25,
+                            letterSpacing: -0.3)),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: openReviews,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: (reviews?.totalReviews ?? 0) > 0
+                            ? Row(mainAxisSize: MainAxisSize.min, children: [
+                                StarRow(
+                                    rating: reviews!.averageRating, size: 16),
+                                const SizedBox(width: 6),
+                                Text(reviews.averageRating.toStringAsFixed(1),
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600)),
+                                Text(
+                                    '  ·  ${reviews.totalReviews} review${reviews.totalReviews != 1 ? 's' : ''}',
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        color: Kv.blue,
+                                        fontWeight: FontWeight.w500)),
+                              ])
+                            : const Text('No reviews yet',
+                                style:
+                                    TextStyle(fontSize: 13, color: Kv.muted)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 10,
+                        runSpacing: 4,
+                        children: [
+                          Text(formatInr(pricing.preGstPrice),
+                              style: const TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.4)),
+                          if (original > 0) ...[
+                            Text(formatInr(original),
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Kv.subtle,
+                                    decoration: TextDecoration.lineThrough)),
+                            if (percentOff > 0)
+                              StatusPill('$percentOff% off',
+                                  tone: PillTone.success),
+                          ],
+                        ]),
+                    const SizedBox(height: 4),
+                    // The price uses the server's own rate, so it is what checkout charges.
+                    Row(children: [
+                      Text(
+                        showBreakdown
+                            ? 'Priced at today’s silver rate · GST extra'
+                            : 'GST extra at checkout',
+                        style: const TextStyle(fontSize: 12.5, color: Kv.muted),
+                      ),
+                      if (showBreakdown)
+                        TextButton(
+                          style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 6)),
+                          onPressed: () => showKvSheet<void>(context,
+                              title: 'Price details',
+                              builder: (_) => _PriceBreakdown(
+                                  pricing: pricing, gstPercent: gstPercent)),
+                          child: const Text('Details',
+                              style: TextStyle(fontSize: 12.5)),
+                        ),
+                    ]),
+                  ]),
+            ),
+            // Size
+            if (variants.isNotEmpty) ...[
+              gap(8),
+              _Section(
+                padding: const EdgeInsets.fromLTRB(Kv.pad, 16, Kv.pad, 16),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text.rich(
+                          TextSpan(children: [
+                            const TextSpan(
+                                text: 'Size',
+                                style: TextStyle(fontWeight: FontWeight.w700)),
+                            if (selected != null)
+                              TextSpan(
+                                  text:
+                                      '  ${selected.displayLabel}${selected.label.isNotEmpty && selected.weight.isNotEmpty ? ' · ${selected.weight}' : ''}',
+                                  style: const TextStyle(color: Kv.muted)),
+                          ]),
+                          style: const TextStyle(fontSize: 15)),
+                      const SizedBox(height: 12),
+                      if (variants.length > _maxInlineVariants)
+                        OutlinedButton(
+                          onPressed: () => _pickVariant(variants),
+                          style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(48)),
+                          child: Row(children: [
+                            Expanded(
+                                child: Text(
+                                    selected?.displayLabel ?? 'Choose a size')),
+                            const Icon(Icons.expand_more_rounded),
+                          ]),
+                        )
+                      else
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          for (var i = 0; i < variants.length; i++)
+                            _VariantChip(
+                              variant: variants[i],
+                              selected: i == _selectedVariant,
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                setState(() => _selectedVariant = i);
+                              },
+                            ),
+                        ]),
+                    ]),
+              ),
+            ],
+            gap(8),
+            // Delivery
+            _Section(
+              padding: const EdgeInsets.fromLTRB(Kv.pad, 16, Kv.pad, 16),
+              child: const _PincodeChecker(),
+            ),
+            gap(8),
+            // Details
+            _Section(
+              padding: const EdgeInsets.fromLTRB(Kv.pad, 20, Kv.pad, 8),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Product details',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 14),
+                    _SpecGrid(
+                        product: product,
+                        displayWeight: displayWeight,
+                        selected: selected),
+                    if ((product.description ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      _Description(
+                        text: product.description!,
+                        expanded: _descExpanded,
+                        onToggle: () =>
+                            setState(() => _descExpanded = !_descExpanded),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    const _TrustRow(),
+                    const SizedBox(height: 8),
+                    const Divider(),
+                    const _InfoTile(
+                      icon: Icons.local_shipping_outlined,
+                      title: 'Shipping & returns',
+                      groups: [
+                        (
+                          'Shipping',
+                          [
+                            'Free insured shipping on all orders',
+                            'Delivery within 5-7 business days across India',
+                            'All shipments are fully insured and tamper-proof sealed',
+                            'Real-time tracking available after dispatch',
+                          ]
+                        ),
+                        (
+                          'Returns & exchange',
+                          [
+                            'Refunds for wrong/damaged/defective items — filed within 48 hrs, unboxing video required',
+                            'Change-of-mind requests: exchange or store credit only, no video needed',
+                            'Exchange available for size/design changes',
+                            'Refunds processed within 5-7 business days',
+                            'Buyback available at prevailing silver rates',
+                          ]
+                        ),
+                      ],
+                    ),
+                    const Divider(),
+                    const _InfoTile(
+                      icon: Icons.verified_outlined,
+                      title: 'Certification',
+                      groups: [
+                        (
+                          '',
+                          [
+                            'All products are BIS Hallmarked for purity assurance',
+                            'Certificate of authenticity included with every purchase',
+                            'Weight verification guarantee',
+                          ]
+                        ),
+                      ],
+                    ),
+                  ]),
+            ),
+            gap(8),
+            // Reviews
+            _Section(
+              padding: const EdgeInsets.only(top: 20, bottom: 20),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SectionHeader(
+                      title: 'Reviews',
+                      action:
+                          (reviews?.totalReviews ?? 0) > 0 ? 'See all' : null,
+                      onAction: openReviews,
+                    ),
+                    Padding(
+                        padding: pad,
+                        child: _ReviewsPreview(
+                            productId: product.id,
+                            reviews: reviews,
+                            onSeeAll: openReviews)),
+                  ]),
+            ),
+            if (related.isNotEmpty) ...[
+              gap(8),
+              _Section(
+                padding: const EdgeInsets.only(top: 20, bottom: 24),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SectionHeader(title: 'You may also like'),
+                      ProductCarousel(products: related),
+                    ]),
+              ),
+            ],
+          ]),
+        ),
+      ]),
     );
   }
 
-  Widget _badge(String text, Color bg, Color fg) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        color: bg,
-        child: Text(text, style: TextStyle(fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.w500, color: fg)),
-      );
-
-  Widget _buildGallery(Product product) {
-    final images = product.images;
-    if (images.isEmpty) {
-      return const AspectRatio(
-        aspectRatio: 1,
-        child: ProductImageView(image: null, decodeWidth: 400),
-      );
-    }
-
-    // The gallery is full-bleed, so decode to the screen width — but no wider.
-    final galleryWidth = MediaQuery.sizeOf(context).width;
-
-    return Column(
-      children: [
-        AspectRatio(
-          aspectRatio: 1,
-          child: PageView.builder(
-            itemCount: images.length,
-            onPageChanged: (i) => setState(() => _imagePage = i),
-            itemBuilder: (context, i) =>
-                ProductImageView(image: images[i], decodeWidth: galleryWidth),
-          ),
-        ),
-        if (images.length > 1)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                images.length,
-                (i) => Container(
-                  width: 7,
-                  height: 7,
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: i == _imagePage
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
+  Future<void> _pickVariant(List<ProductVariant> variants) async {
+    final i = await showKvSheet<int>(
+      context,
+      title: 'Choose a size',
+      builder: (ctx) => ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(bottom: 16),
+          children: [
+            for (var i = 0; i < variants.length; i++)
+              ListTile(
+                title: Text(variants[i].displayLabel),
+                subtitle: variants[i].label.isNotEmpty &&
+                        variants[i].weight.isNotEmpty
+                    ? Text(variants[i].weight)
+                    : null,
+                trailing: i == _selectedVariant
+                    ? const Icon(Icons.check_rounded, color: Kv.blue)
+                    : null,
+                onTap: () => Navigator.pop(ctx, i),
               ),
-            ),
-          ),
-      ],
+          ]),
     );
+    if (i != null) setState(() => _selectedVariant = i);
   }
 
   static String _trimZeros(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
 }
 
-class _PriceBreakdownCard extends StatelessWidget {
-  const _PriceBreakdownCard({required this.pricing, required this.gstPercent});
+/// White band on the grey page; a Material so tiles inside keep their ink.
+class _Section extends StatelessWidget {
+  const _Section({required this.padding, required this.child});
+  final EdgeInsetsGeometry padding;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Material(
+      color: Kv.surface, child: Padding(padding: padding, child: child));
+}
+
+class _RoundButton extends StatelessWidget {
+  const _RoundButton(
+      {required this.icon, required this.onTap, required this.tooltip});
+  final IconData icon;
+  final VoidCallback onTap;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Material(
+          color: Colors.white.withValues(alpha: 0.92),
+          shape: const CircleBorder(),
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: IconButton(
+                tooltip: tooltip,
+                onPressed: onTap,
+                icon: Icon(icon, size: 22, color: Kv.ink)),
+          ),
+        ),
+      );
+}
+
+class _Gallery extends StatelessWidget {
+  const _Gallery(
+      {required this.product, required this.page, required this.onPage});
+  final Product product;
+  final int page;
+  final ValueChanged<int> onPage;
+
+  @override
+  Widget build(BuildContext context) {
+    final images = product.images;
+    // Full-bleed, so decode to the screen width — but no wider.
+    final width = MediaQuery.sizeOf(context).width;
+    return Stack(fit: StackFit.expand, children: [
+      Container(color: const Color(0xFFEFF1F4)),
+      if (images.isEmpty)
+        ProductImageView(image: null, decodeWidth: width)
+      else
+        PageView.builder(
+          itemCount: images.length,
+          onPageChanged: onPage,
+          itemBuilder: (context, i) =>
+              ProductImageView(image: images[i], decodeWidth: width),
+        ),
+      Positioned(
+        left: Kv.pad,
+        bottom: 14,
+        child: Row(children: [
+          if (!product.inStock)
+            const StatusPill('Sold out')
+          else ...[
+            if (product.isSale) const StatusPill('Sale', tone: PillTone.danger),
+            if (product.isSale && product.isNew) const SizedBox(width: 6),
+            if (product.isNew) const StatusPill('New', tone: PillTone.info),
+          ],
+        ]),
+      ),
+      if (images.length > 1)
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 18,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            for (var i = 0; i < images.length; i++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: i == page ? 18 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                    color: i == page
+                        ? Kv.ink
+                        : Colors.white.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(3)),
+              ),
+          ]),
+        ),
+    ]);
+  }
+}
+
+class _VariantChip extends StatelessWidget {
+  const _VariantChip(
+      {required this.variant, required this.selected, required this.onTap});
+  final ProductVariant variant;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        selected: selected,
+        button: true,
+        child: Material(
+          color: selected ? Kv.blueSoft : Kv.surface,
+          shape: RoundedRectangleBorder(
+              borderRadius: Kv.smallRadius,
+              side: BorderSide(
+                  color: selected ? Kv.blue : Kv.line,
+                  width: selected ? 1.5 : 1)),
+          child: InkWell(
+            borderRadius: Kv.smallRadius,
+            onTap: onTap,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 64, minHeight: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(variant.displayLabel,
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: selected ? Kv.blueDark : Kv.ink)),
+                    if (variant.label.isNotEmpty && variant.weight.isNotEmpty)
+                      Text(variant.weight,
+                          style:
+                              const TextStyle(fontSize: 11.5, color: Kv.muted)),
+                  ]),
+            ),
+          ),
+        ),
+      );
+}
+
+class _PriceBreakdown extends StatelessWidget {
+  const _PriceBreakdown({required this.pricing, required this.gstPercent});
 
   final ProductPriceBreakdown pricing;
   final double? gstPercent;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Price breakdown', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 12),
-            _row(
-              context,
-              'Metal value',
-              formatInr(pricing.metalValue!.round()),
-              subtitle: '${_grams(pricing.grams!)} g × ${formatRatePerGram(pricing.ratePerGram!)}',
+    Widget row(String label, String value,
+            {String? subtitle, bool bold = false}) =>
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight:
+                                bold ? FontWeight.w700 : FontWeight.w400)),
+                    if (subtitle != null)
+                      Text(subtitle,
+                          style:
+                              const TextStyle(fontSize: 12.5, color: Kv.muted)),
+                  ]),
             ),
-            // Charge rows appear only when non-zero, matching the web.
-            if ((pricing.makingCharge ?? 0) > 0)
-              _row(context, 'Making charge', formatInr(pricing.makingCharge!.round())),
-            if ((pricing.wastage ?? 0) > 0)
-              _row(context, 'Wastage', formatInr(pricing.wastage!.round())),
-            const Divider(height: 20),
-            _row(
-              context,
-              'Price (before GST)',
-              formatInr(pricing.preGstPrice.round()),
-              bold: true,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              "Metal value is indicative, based on today's silver rate."
-              '${gstPercent != null ? ' GST (${_percent(gstPercent!)}%)' : ' GST'}'
-              ' and delivery are added at checkout.',
-              style: theme.textTheme.labelSmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-          ],
+            Text(value,
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: bold ? FontWeight.w700 : FontWeight.w500)),
+          ]),
+        );
+    return ListView(
+      shrinkWrap: true,
+      padding: EdgeInsets.fromLTRB(
+          20, 0, 20, 20 + MediaQuery.paddingOf(context).bottom),
+      children: [
+        row('Metal value', formatInr(pricing.metalValue!.round()),
+            subtitle:
+                '${_grams(pricing.grams!)} g × ${formatRatePerGram(pricing.ratePerGram!)}'),
+        // Charge rows appear only when non-zero, matching the web.
+        if ((pricing.makingCharge ?? 0) > 0)
+          row('Making charge', formatInr(pricing.makingCharge!.round())),
+        if ((pricing.wastage ?? 0) > 0)
+          row('Wastage', formatInr(pricing.wastage!.round())),
+        const Divider(height: 20),
+        row('Price (before GST)', formatInr(pricing.preGstPrice.round()),
+            bold: true),
+        const SizedBox(height: 10),
+        Text(
+          "Metal value is indicative, based on today's silver rate."
+          '${gstPercent != null ? ' GST (${_percent(gstPercent!)}%)' : ' GST'}'
+          ' and delivery are added at checkout.',
+          style: const TextStyle(fontSize: 12.5, color: Kv.muted, height: 1.4),
         ),
-      ),
+      ],
     );
   }
 
   static String _grams(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
-
   static String _percent(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
-
-  Widget _row(BuildContext context, String label, String value,
-      {String? subtitle, bool bold = false}) {
-    final theme = Theme.of(context);
-    final style = bold
-        ? theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700)
-        : theme.textTheme.bodyMedium;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: style),
-                if (subtitle != null)
-                  Text(subtitle,
-                      style: theme.textTheme.labelSmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-              ],
-            ),
-          ),
-          Text(value, style: style),
-        ],
-      ),
-    );
-  }
 }
 
-class _SpecificationsCard extends StatelessWidget {
-  const _SpecificationsCard({
-    required this.product,
-    required this.displayWeight,
-    required this.selected,
-  });
+/// Key specs, two per row.
+class _SpecGrid extends StatelessWidget {
+  const _SpecGrid(
+      {required this.product,
+      required this.displayWeight,
+      required this.selected});
 
   final Product product;
   final String displayWeight;
@@ -433,37 +701,217 @@ class _SpecificationsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final cells = <(String, String, Color?)>[
-      if (!product.isFixedPrice) ('Weight', displayWeight, null),
-      ('Purity', product.purity ?? '', null),
-      if ((selected?.height ?? '').isNotEmpty) ('Height', selected!.height!, null),
-      if ((selected?.breadth ?? '').isNotEmpty) ('Breadth', selected!.breadth!, null),
-      ('Category', product.material ?? '', null),
-      ('Availability', product.inStock ? 'In Stock' : 'Out of Stock',
-          product.inStock ? const Color(0xFF16A34A) : scheme.error),
+      // No weight on record (e.g. paper frames): leave the cell out rather than say "0 g".
+      if (!product.isFixedPrice &&
+          (selected?.weight.isNotEmpty == true || product.weightInGrams > 0))
+        ('Weight', displayWeight, null),
+      if ((product.purity ?? '').isNotEmpty) ('Purity', product.purity!, null),
+      if ((selected?.height ?? '').isNotEmpty)
+        ('Height', selected!.height!, null),
+      if ((selected?.breadth ?? '').isNotEmpty)
+        ('Breadth', selected!.breadth!, null),
+      if ((product.material ?? '').isNotEmpty)
+        ('Category', product.material!, null),
+      (
+        'Availability',
+        product.inStock ? 'In stock' : 'Out of stock',
+        product.inStock ? Kv.success : Kv.danger
+      ),
     ];
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          color: scheme.secondary.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(6)),
-      child: LayoutBuilder(
-        builder: (context, c) => Wrap(
-          runSpacing: 16,
+    return LayoutBuilder(
+      builder: (context, c) => Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final (label, value, color) in cells)
+          Container(
+            width: (c.maxWidth - 8) / 2,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration:
+                BoxDecoration(color: Kv.bg, borderRadius: Kv.smallRadius),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: Kv.muted,
+                      fontWeight: FontWeight.w500)),
+              const SizedBox(height: 2),
+              Text(value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: color ?? Kv.ink)),
+            ]),
+          ),
+      ]),
+    );
+  }
+}
+
+class _Description extends StatelessWidget {
+  const _Description(
+      {required this.text, required this.expanded, required this.onToggle});
+  final String text;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(fontSize: 14.5, color: Kv.ink, height: 1.55);
+    return LayoutBuilder(builder: (context, c) {
+      final tp = TextPainter(
+        text: TextSpan(text: text, style: style),
+        maxLines: 4,
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout(maxWidth: c.maxWidth);
+      final long = tp.didExceedMaxLines;
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(text,
+            style: style,
+            maxLines: expanded ? null : 4,
+            overflow: expanded ? null : TextOverflow.ellipsis),
+        if (long)
+          GestureDetector(
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(expanded ? 'Show less' : 'Read more',
+                  style: const TextStyle(
+                      color: Kv.blue,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14)),
+            ),
+          ),
+      ]);
+    });
+  }
+}
+
+class _TrustRow extends StatelessWidget {
+  const _TrustRow();
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        for (final (icon, label) in const [
+          (Icons.verified_outlined, 'BIS hallmarked'),
+          (Icons.local_shipping_outlined, 'Insured shipping'),
+          (Icons.autorenew_rounded, '7-day returns'),
+        ])
+          Expanded(
+            child: Column(children: [
+              Icon(icon, size: 22, color: Kv.blue),
+              const SizedBox(height: 6),
+              Text(label,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12, color: Kv.muted)),
+            ]),
+          ),
+      ]);
+}
+
+class _InfoTile extends StatelessWidget {
+  const _InfoTile(
+      {required this.icon, required this.title, required this.groups});
+  final IconData icon;
+  final String title;
+  final List<(String, List<String>)> groups;
+
+  @override
+  Widget build(BuildContext context) => Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 12),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          leading: Icon(icon, color: Kv.ink, size: 22),
+          title: Text(title,
+              style:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           children: [
-            for (final (label, value, color) in cells)
-              SizedBox(
-                width: c.maxWidth / 2,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(label.toUpperCase(),
-                      style: TextStyle(fontSize: 12, letterSpacing: 0.8, color: scheme.onSurfaceVariant)),
-                  Text(value, style: TextStyle(fontWeight: FontWeight.w500, color: color)),
-                ]),
-              ),
+            for (final (heading, items) in groups) ...[
+              if (heading.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 6),
+                  child: Text(heading,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600)),
+                ),
+              for (final i in items)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 7, right: 10),
+                          child: CircleAvatar(
+                              radius: 2.5, backgroundColor: Kv.subtle),
+                        ),
+                        Expanded(
+                            child: Text(i,
+                                style: const TextStyle(
+                                    fontSize: 13.5,
+                                    color: Kv.muted,
+                                    height: 1.45))),
+                      ]),
+                ),
+              const SizedBox(height: 6),
+            ],
           ],
         ),
-      ),
-    );
+      );
+}
+
+class _ReviewsPreview extends ConsumerWidget {
+  const _ReviewsPreview(
+      {required this.productId, required this.reviews, required this.onSeeAll});
+  final String productId;
+  final ReviewSummary? reviews;
+  final VoidCallback onSeeAll;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authed = ref.watch(authSessionProvider).isAuthenticated;
+    final r = reviews;
+    final list = r?.reviews ?? const <Review>[];
+    final write = authed
+        ? OutlinedButton.icon(
+            onPressed: () => showWriteReviewSheet(context, productId),
+            icon: const Icon(Icons.rate_review_outlined, size: 20),
+            label: const Text('Write a review'),
+          )
+        : null;
+    if (list.isEmpty) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(
+          authed
+              ? 'No reviews yet. Be the first to share what you think.'
+              : 'No reviews yet.',
+          style: const TextStyle(color: Kv.muted),
+        ),
+        if (write != null) ...[const SizedBox(height: 12), write],
+      ]);
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ReviewSummaryCard(summary: r!),
+      for (final rv in list.take(2)) ...[
+        const SizedBox(height: 12),
+        ReviewTile(review: rv)
+      ],
+      const SizedBox(height: 12),
+      Row(children: [
+        if (list.length > 2) ...[
+          Expanded(
+            child: TextButton(
+                onPressed: onSeeAll,
+                child: Text('See all ${r.totalReviews} reviews')),
+          ),
+        ],
+        if (write != null) Expanded(child: write),
+      ]),
+    ]);
   }
 }
 
@@ -490,6 +938,7 @@ class _PincodeCheckerState extends ConsumerState<_PincodeChecker> {
 
   Future<void> _check() async {
     if (_ctrl.text.length != 6) return;
+    FocusScope.of(context).unfocus();
     setState(() {
       _checking = true;
       _result = null;
@@ -501,7 +950,9 @@ class _PincodeCheckerState extends ConsumerState<_PincodeChecker> {
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      if (mounted) setState(() => _error = 'Could not check this pincode. Please try again.');
+      if (mounted) {
+        setState(() => _error = 'Could not check this pincode. Please try again.');
+      }
     } finally {
       if (mounted) setState(() => _checking = false);
     }
@@ -509,312 +960,105 @@ class _PincodeCheckerState extends ConsumerState<_PincodeChecker> {
 
   @override
   Widget build(BuildContext context) {
-    const green = Color(0xFF16A34A);
-    final red = Theme.of(context).colorScheme.error;
     final r = _result;
     Widget line(IconData icon, String text, Color color) => Padding(
-          padding: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.only(top: 10),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 6),
-            Expanded(child: Text(text, style: TextStyle(fontSize: 12, color: color))),
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(text,
+                    style:
+                        TextStyle(fontSize: 13, color: color, height: 1.35))),
           ]),
         );
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        SizedBox(
-          width: 180,
-          child: TextField(
-            controller: _ctrl,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
-            decoration: const InputDecoration(hintText: 'Enter 6-digit pincode', isDense: true),
-            style: const TextStyle(fontSize: 14),
-            onChanged: (_) => setState(() {
-              _result = null;
-              _error = null;
-            }),
+      const Row(children: [
+        Icon(Icons.location_on_outlined, size: 20),
+        SizedBox(width: 8),
+        Text('Check delivery',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+      ]),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _ctrl,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(6)
+        ],
+        onSubmitted: (_) => _check(),
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Enter 6-digit pincode',
+          contentPadding: const EdgeInsets.fromLTRB(14, 14, 4, 14),
+          suffixIcon: Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: TextButton(
+              onPressed: _ctrl.text.length < 6 || _checking ? null : _check,
+              child: _checking
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Check'),
+            ),
           ),
         ),
-        const SizedBox(width: 8),
-        OutlinedButton(
-          onPressed: _ctrl.text.length < 6 || _checking ? null : _check,
-          child: _checking
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Check'),
-        ),
-      ]),
-      if (_error != null) line(Icons.error_outline, _error!, red),
+        style: const TextStyle(fontSize: 15, letterSpacing: 1),
+        onChanged: (_) => setState(() {
+          _result = null;
+          _error = null;
+        }),
+      ),
+      if (_error != null) line(Icons.error_outline, _error!, Kv.danger),
       if (r != null && !r.available)
-        line(Icons.cancel_outlined, r.reason ?? 'Delivery not available to this pincode', red),
+        line(Icons.cancel_outlined,
+            r.reason ?? 'Delivery not available to this pincode', Kv.danger),
       if (r != null && r.available) ...[
         line(
           Icons.check_circle_outline,
           r.verified && r.city != null
-              ? 'Delivery available to ${r.city}, ${r.state} — arrives in ${r.estimatedDays ?? '5–7'} business days'
+              ? 'Delivers to ${r.city}, ${r.state} in ${r.estimatedDays ?? '5–7'} business days'
               : 'Delivery available — arrives in ${r.estimatedDays ?? '5–7'} business days',
-          green,
+          Kv.success,
         ),
         if (r.verified && r.deliveryFee != null)
-          line(Icons.local_shipping_outlined, 'Delivery charge: ${formatInr(r.deliveryFee!)}', green),
+          line(Icons.local_shipping_outlined,
+              'Delivery charge: ${formatInr(r.deliveryFee!)}', Kv.success),
       ],
-    ]);
-  }
-}
-
-/// Five stars, the first [rating] filled (web: fill-accent text-primary).
-class StarRow extends StatelessWidget {
-  const StarRow({super.key, required this.rating, this.size = 12, this.onTap});
-  final int rating;
-  final double size;
-  final ValueChanged<int>? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      for (var star = 1; star <= 5; star++)
-        GestureDetector(
-          onTap: onTap == null ? null : () => onTap!(star),
-          child: Icon(star <= rating ? Icons.star : Icons.star_border,
-              size: size,
-              color: star <= rating ? scheme.primary : scheme.onSurfaceVariant.withValues(alpha: 0.3)),
-        ),
-    ]);
-  }
-}
-
-/// "Reviews (n)" and "Shipping & Returns" tabs.
-class _DetailTabs extends ConsumerStatefulWidget {
-  const _DetailTabs({required this.productId, required this.reviews});
-  final String productId;
-  final ReviewSummary? reviews;
-
-  @override
-  ConsumerState<_DetailTabs> createState() => _DetailTabsState();
-}
-
-class _DetailTabsState extends ConsumerState<_DetailTabs> {
-  int _tab = 0;
-  int _rating = 5;
-  final _title = TextEditingController();
-  final _comment = TextEditingController();
-  bool _submitting = false;
-
-  @override
-  void dispose() {
-    _title.dispose();
-    _comment.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    setState(() => _submitting = true);
-    try {
-      await ref
-          .read(reviewRepositoryProvider)
-          .create(widget.productId, rating: _rating, title: _title.text, comment: _comment.text);
-      ref.invalidate(productReviewsProvider(widget.productId));
-      _title.clear();
-      _comment.clear();
-      setState(() => _rating = 5);
-      if (mounted) showToast(context, 'Review Submitted', 'Thank you for your review!');
-    } catch (_) {
-      // The web shows nothing on failure; the button just re-enables.
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
-    final authed = ref.watch(authSessionProvider).isAuthenticated;
-    final r = widget.reviews;
-    final list = r?.reviews ?? const <Review>[];
-    TextStyle? h3 = theme.textTheme.titleLarge?.copyWith(fontSize: 18, fontWeight: FontWeight.w600);
-    Widget bullets(String title, List<String> items) => Padding(
-          padding: const EdgeInsets.only(bottom: 24),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: h3),
-            const SizedBox(height: 8),
-            for (final i in items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text('• $i', style: TextStyle(fontSize: 14, color: muted)),
-              ),
-          ]),
-        );
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SegmentedButton<int>(
-        segments: [
-          ButtonSegment(value: 0, label: Text('Reviews (${r?.totalReviews ?? 0})')),
-          const ButtonSegment(value: 1, label: Text('Shipping & Returns')),
-        ],
-        selected: {_tab},
-        showSelectedIcon: false,
-        onSelectionChanged: (s) => setState(() => _tab = s.first),
-      ),
-      const SizedBox(height: 8),
-      Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: _tab == 1
-              ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  bullets('Shipping', const [
-                    'Free insured shipping on all orders',
-                    'Delivery within 5-7 business days across India',
-                    'All shipments are fully insured and tamper-proof sealed',
-                    'Real-time tracking available after dispatch',
-                  ]),
-                  bullets('Returns & Exchange', const [
-                    'Refunds for wrong/damaged/defective items — filed within 48 hrs, unboxing video required',
-                    'Change-of-mind requests: exchange or store credit only, no video needed',
-                    'Exchange available for size/design changes',
-                    'Refunds processed within 5-7 business days',
-                    'Buyback available at prevailing silver rates',
-                  ]),
-                  bullets('Certification', const [
-                    'All products are BIS Hallmarked for purity assurance',
-                    'Certificate of authenticity included with every purchase',
-                    'Weight verification guarantee',
-                  ]),
-                ])
-              : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  if (list.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 24, top: 8),
-                      child: Text('No reviews yet. Be the first to review this product!',
-                          textAlign: TextAlign.center, style: TextStyle(color: muted)),
-                    )
-                  else
-                    for (final rv in list)
-                      Container(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: rv == list.last
-                            ? null
-                            : BoxDecoration(border: Border(bottom: BorderSide(color: theme.colorScheme.outline))),
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                            StarRow(rating: rv.rating),
-                            Text(rv.userName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                            if (rv.createdAt != null)
-                              Text(DateFormat('d/M/y').format(rv.createdAt!.toLocal()),
-                                  style: TextStyle(fontSize: 12, color: muted)),
-                          ]),
-                          const SizedBox(height: 8),
-                          if (rv.title.isNotEmpty)
-                            Text(rv.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                          Text(rv.comment, style: TextStyle(fontSize: 14, color: muted)),
-                        ]),
-                      ),
-                  if (authed) ...[
-                    const Divider(height: 1),
-                    const SizedBox(height: 24),
-                    Text('Write a Review', style: h3),
-                    const SizedBox(height: 16),
-                    const Text('Rating', style: TextStyle(fontWeight: FontWeight.w500)),
-                    const SizedBox(height: 4),
-                    StarRow(rating: _rating, size: 24, onTap: (v) => setState(() => _rating = v)),
-                    const SizedBox(height: 16),
-                    TextField(
-                        controller: _title,
-                        decoration: const InputDecoration(labelText: 'Title', hintText: 'Summary of your review')),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _comment,
-                      maxLines: 4,
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                          labelText: 'Your Review',
-                          hintText: 'Tell us about your experience with this product...',
-                          alignLabelWithHint: true),
-                    ),
-                    const SizedBox(height: 16),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: FilledButton(
-                        onPressed: _comment.text.isEmpty || _submitting ? null : _submit,
-                        child: Text(_submitting ? 'Submitting...' : 'Submit Review'),
-                      ),
-                    ),
-                  ],
-                ]),
-        ),
-      ),
     ]);
   }
 }
 
 /// Shown when a dynamically-priced product falls back to its listed price.
-class _PriceBasisNotice extends StatelessWidget {
-  const _PriceBasisNotice({
-    required this.isLoading,
-    required this.failed,
-    required this.onRetry,
-  });
-
-  final bool isLoading;
-  final bool failed;
-  final VoidCallback onRetry;
+class _DetailSkeleton extends StatelessWidget {
+  const _DetailSkeleton();
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    if (isLoading) {
-      return Text('Updating with today’s rate…',
-          style: theme.textTheme.labelMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant));
-    }
-
-    return Row(
-      children: [
-        Icon(Icons.info_outline, size: 16, color: theme.colorScheme.onSurfaceVariant),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            failed
-                ? 'Showing the listed price — today’s rate is unavailable.'
-                : 'Showing the listed price.',
-            style: theme.textTheme.labelMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ),
-        if (failed)
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
-      ],
-    );
-  }
-}
-
-class _ErrorBody extends StatelessWidget {
-  const _ErrorBody({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off, size: 48, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 16),
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: onRetry, child: const Text('Try again')),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => KvShimmer(
+        child: ListView(
+            physics: const NeverScrollableScrollPhysics(),
+            children: const [
+              AspectRatio(aspectRatio: 1, child: KvSkeleton(radius: 0)),
+              Padding(
+                padding: EdgeInsets.all(Kv.pad),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      KvSkeleton(width: 80, height: 12),
+                      SizedBox(height: 10),
+                      KvSkeleton(width: 260, height: 22),
+                      SizedBox(height: 14),
+                      KvSkeleton(width: 120, height: 14),
+                      SizedBox(height: 16),
+                      KvSkeleton(width: 140, height: 28),
+                      SizedBox(height: 24),
+                      KvSkeleton(height: 64, radius: Kv.radiusSm),
+                    ]),
+              ),
+            ]),
+      );
 }

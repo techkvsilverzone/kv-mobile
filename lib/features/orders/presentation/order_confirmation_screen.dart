@@ -3,11 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/api/api_exception.dart';
-import '../../../core/format/currency.dart';
+import '../../../core/ui/kv_ui.dart';
 import '../../../core/widgets/links.dart';
-import '../../catalog/data/models/product.dart';
-import '../../catalog/presentation/widgets/product_image.dart';
-import '../../savings/application/installment_payer.dart';
+import '../../cart/presentation/widgets/item_thumb.dart';
 import '../data/models/order.dart';
 import '../data/order_repository.dart';
 
@@ -20,221 +18,131 @@ class OrderConfirmationScreen extends ConsumerWidget {
   final String orderId;
 
   static const _steps = [
-    ('01', Icons.inventory_2_outlined, 'Hallmarking & Packing',
-        'Our artisans verify purity, apply BIS hallmarks, and pack your pieces in our signature gift box.'),
-    ('02', Icons.shopping_bag_outlined, 'Insured Dispatch',
-        'Your order is fully insured and dispatched via our trusted courier within 24–48 hours.'),
-    ('03', Icons.check_circle_outline, 'Delivered to You',
-        "Expect delivery within 5–7 business days. You'll receive tracking details via SMS & email."),
+    (Icons.verified_outlined, 'Hallmarking & packing', 'Purity checked, BIS hallmarked and packed in our gift box.'),
+    (Icons.local_shipping_outlined, 'Insured dispatch', 'Shipped fully insured within 24–48 hours.'),
+    (Icons.home_outlined, 'Delivered to you', 'In 5–7 business days. Tracking comes by SMS and email.'),
   ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(orderProvider(orderId));
-    if (async.isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
     final order = async.valueOrNull;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final muted = scheme.onSurfaceVariant;
-    const green = Color(0xFF22C55E);
-    final serif = theme.textTheme.headlineLarge?.copyWith(
-        color: scheme.primary, fontWeight: FontWeight.w400, height: 1.2);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Order Confirmed')),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        actions: [IconButton(tooltip: 'Close', onPressed: () => context.go('/home'), icon: const Icon(Icons.close))],
+      ),
       body: ListView(
+        padding: const EdgeInsets.fromLTRB(Kv.pad, 8, Kv.pad, Kv.gap),
         children: [
-          // Celebration header
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 64, horizontal: 16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  scheme.primary.withValues(alpha: 0.05),
-                  scheme.surface,
-                  scheme.tertiary.withValues(alpha: 0.1),
-                ],
+          Center(
+            child: Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Kv.successSoft,
+                border: Border.all(color: Kv.success.withValues(alpha: 0.18), width: 8),
               ),
-            ),
-            child: Column(
-              children: [
-                Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFFBBF7D0), width: 2),
-                  ),
-                  child: const Icon(Icons.check_circle_outline, size: 48, color: green),
-                ),
-                const SizedBox(height: 32),
-                Text('ORDER CONFIRMED',
-                    style: theme.textTheme.labelSmall?.copyWith(color: muted, letterSpacing: 3.6)),
-                const SizedBox(height: 12),
-                Text.rich(
-                  TextSpan(children: [
-                    const TextSpan(text: 'Thank you for your\n'),
-                    TextSpan(
-                        text: 'precious order', style: serif?.copyWith(fontStyle: FontStyle.italic)),
-                  ]),
-                  textAlign: TextAlign.center,
-                  style: serif,
-                ),
-                const SizedBox(height: 16),
-                Text('Your silver treasures are being carefully prepared.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyLarge
-                        ?.copyWith(color: muted, fontWeight: FontWeight.w300)),
-                if (order != null) ...[
-                  const SizedBox(height: 8),
-                  Text.rich(
-                    TextSpan(children: [
-                      const TextSpan(text: 'Order '),
-                      TextSpan(
-                        text: '#${_shortId(order.id)}',
-                        style: TextStyle(fontWeight: FontWeight.w500, color: scheme.onSurface),
-                      ),
-                      if (order.createdAt != null)
-                        TextSpan(
-                            text: ' • ${DateFormat('d MMMM y').format(order.createdAt!.toLocal())}'),
-                    ]),
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                  ),
-                ],
-              ],
+              child: const Icon(Icons.check_rounded, size: 48, color: Kv.success),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 48, 16, 48),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // What happens next
-                Text('What happens next',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineSmall?.copyWith(color: scheme.primary)),
-                const SizedBox(height: 32),
-                for (final (step, icon, title, desc) in _steps)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 32),
-                    child: Column(
-                      children: [
-                        Text(step,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                                fontSize: 10, letterSpacing: 2, color: muted.withValues(alpha: 0.5))),
-                        const SizedBox(height: 4),
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: scheme.outline),
-                            color: scheme.secondaryContainer.withValues(alpha: 0.5),
-                          ),
-                          child: Icon(icon, size: 28, color: muted),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(title,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                                fontFamily: theme.textTheme.titleLarge?.fontFamily,
-                                color: scheme.primary)),
-                        const SizedBox(height: 8),
-                        Text(desc,
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium
-                                ?.copyWith(color: muted, fontWeight: FontWeight.w300, height: 1.6)),
-                      ],
-                    ),
+          const SizedBox(height: 20),
+          const Text('Order confirmed',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.4)),
+          const SizedBox(height: 6),
+          const Text('Thank you! Your silver is being carefully prepared.',
+              textAlign: TextAlign.center, style: TextStyle(color: Kv.muted, fontSize: 15)),
+          if (order != null) ...[
+            const SizedBox(height: 12),
+            Center(
+              child: StatusPill(
+                'Order #${_shortId(order.id)}'
+                '${order.createdAt == null ? '' : ' · ${DateFormat('d MMMM y').format(order.createdAt!.toLocal())}'}',
+                tone: PillTone.neutral,
+              ),
+            ),
+          ],
+          const SizedBox(height: 28),
+          if (async.isLoading)
+            const ListSkeleton(rows: 2, height: 96)
+          else if (order != null) ...[
+            _Summary(order: order),
+            const SizedBox(height: 12),
+            _ResendLine(orderId: order.id),
+            const SizedBox(height: 12),
+          ],
+          const SectionHeader(title: 'What happens next', padding: EdgeInsets.fromLTRB(4, 0, 4, 10)),
+          KvCard(
+            child: Column(children: [
+              for (final (i, (icon, title, desc)) in _steps.indexed) ...[
+                if (i > 0) const SizedBox(height: 16),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(color: Kv.blueSoft, shape: BoxShape.circle),
+                    child: Icon(icon, size: 20, color: Kv.blue),
                   ),
-                if (order != null) ...[
-                  _Summary(order: order),
-                  const SizedBox(height: 32),
-                  _ResendLine(orderId: order.id),
-                  const SizedBox(height: 32),
-                ],
-                // Authenticity notice
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.05),
-                    border: Border.all(color: scheme.primary.withValues(alpha: 0.15)),
-                    borderRadius: BorderRadius.circular(8),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(desc, style: const TextStyle(fontSize: 13, color: Kv.muted, height: 1.35)),
+                    ]),
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      CircleAvatar(
-                        radius: 20,
-                        backgroundColor: scheme.primary.withValues(alpha: 0.1),
-                        child: Icon(Icons.check_circle_outline, size: 20, color: scheme.primary),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Certificate of Authenticity Included',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                    fontFamily: theme.textTheme.titleLarge?.fontFamily,
-                                    color: scheme.primary)),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Your package will include a BIS Hallmark certificate and KV Silver Zone authenticity card. These documents verify the purity and craftsmanship of your silver pieces.',
-                              style: theme.textTheme.bodyMedium
-                                  ?.copyWith(color: muted, fontWeight: FontWeight.w300, height: 1.6),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 32),
-                // CTA row
-                if (order != null) ...[
-                  OutlinedButton.icon(
-                    onPressed: () => context.push('/orders/${order.id}'),
-                    icon: const Icon(Icons.inventory_2_outlined, size: 16),
-                    label: const Text('Track My Order'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => context.push('/orders/${order.id}/invoice'),
-                    icon: const Icon(Icons.download, size: 16),
-                    label: const Text('Download Invoice'),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                FilledButton.icon(
-                  onPressed: () => context.go('/shop'),
-                  iconAlignment: IconAlignment.end,
-                  icon: const Icon(Icons.arrow_forward, size: 16),
-                  label: const Text('Continue Shopping'),
-                ),
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  style: TextButton.styleFrom(foregroundColor: muted),
-                  onPressed: () => openLink(storePhoneUri),
-                  icon: const Icon(Icons.phone_outlined, size: 16),
-                  label: const Text('Contact Support'),
-                ),
+                ]),
               ],
+            ]),
+          ),
+          const SizedBox(height: 12),
+          const KvCard(
+            color: Kv.goldSoft,
+            padding: EdgeInsets.all(14),
+            child: Row(children: [
+              Icon(Icons.workspace_premium_outlined, color: Kv.gold),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text('Your parcel includes a BIS hallmark certificate and a KV authenticity card.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF6B5320))),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton.icon(
+              style: TextButton.styleFrom(foregroundColor: Kv.muted),
+              onPressed: () => openLink(storePhoneUri),
+              icon: const Icon(Icons.phone_outlined, size: 16),
+              label: const Text('Contact support'),
             ),
           ),
         ],
+      ),
+      bottomNavigationBar: BottomActionBar(
+        action: Row(children: [
+          if (order != null) ...[
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => context.push('/orders/${order.id}'),
+                child: const Text('View order'),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: FilledButton(onPressed: () => context.go('/shop'), child: const Text('Keep shopping')),
+          ),
+        ]),
       ),
     );
   }
 
   /// Web `order.id.slice(-8).toUpperCase()`.
-  static String _shortId(String id) =>
-      (id.length <= 8 ? id : id.substring(id.length - 8)).toUpperCase();
+  static String _shortId(String id) => (id.length <= 8 ? id : id.substring(id.length - 8)).toUpperCase();
 }
 
 class _Summary extends StatelessWidget {
@@ -244,78 +152,46 @@ class _Summary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        border: Border.all(color: scheme.outline),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            color: scheme.secondaryContainer.withValues(alpha: 0.3),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Text('Order Summary',
-                style: theme.textTheme.titleLarge?.copyWith(fontSize: 18, color: scheme.primary)),
-          ),
-          for (final item in order.items) ...[
-            Divider(height: 1, color: scheme.outline),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Row(
-                children: [
-                  if (item.image != null) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: SizedBox(
-                        width: 56,
-                        height: 56,
-                        child: ProductImageView(
-                          image: ProductImage(data: item.image!, sortOrder: 0),
-                          decodeWidth: 56,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(item.productName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w500)),
-                        Text('Qty: ${item.quantity}',
-                            style: theme.textTheme.labelSmall
-                                ?.copyWith(color: scheme.onSurfaceVariant)),
-                      ],
-                    ),
-                  ),
-                  Text(formatInr(item.unitPrice * item.quantity),
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                ],
+    return KvCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Column(children: [
+        for (final item in order.items) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(children: [
+              ItemThumb(image: item.image, size: 48),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(item.productName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  Text('Qty: ${item.quantity}', style: const TextStyle(fontSize: 12, color: Kv.muted)),
+                ]),
               ),
-            ),
-          ],
-          Container(
-            color: scheme.secondaryContainer.withValues(alpha: 0.2),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Row(
-              children: [
-                const Expanded(
-                    child: Text('Total Paid', style: TextStyle(fontWeight: FontWeight.w500))),
-                Text(formatInr(order.grandTotal),
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w600, color: scheme.primary)),
-              ],
-            ),
+              PriceText(item.unitPrice * item.quantity, size: 14),
+            ]),
           ),
+          const Divider(),
         ],
-      ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(children: [
+            const Expanded(child: Text('Total paid', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
+            PriceText(order.grandTotal, size: 18),
+          ]),
+        ),
+        const Divider(),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          leading: const Icon(Icons.download_rounded, color: Kv.ink),
+          title: const Text('Download invoice', style: TextStyle(fontSize: 14)),
+          trailing: const Icon(Icons.chevron_right, color: Kv.subtle),
+          onTap: () => context.push('/orders/${order.id}/invoice'),
+        ),
+      ]),
     );
   }
 }
@@ -336,13 +212,10 @@ class _ResendLineState extends ConsumerState<_ResendLine> {
     setState(() => _sending = true);
     try {
       await ref.read(orderRepositoryProvider).resendConfirmation(widget.orderId);
-      if (mounted) {
-        showToast(context, 'Email sent', 'Your order confirmation email has been resent.');
-      }
+      if (mounted) showKvToast(context, 'Email sent', message: 'Your order confirmation email has been resent.');
     } on ApiException {
       if (mounted) {
-        showToast(context, 'Could not resend', 'Please try again shortly or contact support.',
-            error: true);
+        showKvToast(context, 'Could not resend', message: 'Please try again shortly or contact support.', error: true);
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -350,17 +223,16 @@ class _ResendLineState extends ConsumerState<_ResendLine> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Column(
-      children: [
-        Text('A confirmation email has been sent to your registered address.',
-            textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 13)),
+  Widget build(BuildContext context) => Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        const Icon(Icons.mail_outline_rounded, size: 16, color: Kv.muted),
+        const SizedBox(width: 6),
+        const Flexible(
+          child: Text('Confirmation sent to your email.', style: TextStyle(color: Kv.muted, fontSize: 13)),
+        ),
         TextButton(
           onPressed: _sending ? null : _resend,
+          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
           child: Text(_sending ? 'Sending…' : 'Resend email'),
         ),
-      ],
-    );
-  }
+      ]);
 }

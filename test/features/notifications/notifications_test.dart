@@ -59,7 +59,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('Mark all as read'), findsOneWidget);
+    expect(find.text('Mark all read'), findsOneWidget);
     await tester.tap(find.text('Order shipped'));
     await tester.pumpAndSettle();
     expect(repo.read, ['9']);

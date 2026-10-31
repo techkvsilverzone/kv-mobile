@@ -1,161 +1,209 @@
-// lib/core/theme/app_theme.dart
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'tokens.dart';
 
-/// A port of the web's design tokens (kv-ui/src/index.css `:root` and `.dark`)
-/// rather than a seed-derived Material scheme, so the app shows the same colours.
-///
-/// The web's runtime theming (kv-ui/src/App.tsx `applyTheme`) overrides only
-/// `--primary` and `--ring`, and sets them as inline styles, so the same
-/// override applies in light and dark. An unknown or missing theme key leaves the
-/// base graphite primary, exactly as on the web.
+/// The app's single light theme, built from [Kv] tokens.
 class AppTheme {
   const AppTheme._();
 
-  /// `colorThemeCssVars` in kv-ui/src/App.tsx, as HSL triples.
-  static const themePrimaries = <String, List<double>>{
-    'ocean-teal': [195, 50, 45],
-    'rose-gold': [350, 40, 50],
-    'icy-silver': [210, 25, 45],
-    'deep-amethyst': [270, 40, 45],
-  };
-
-  static Color hsl(double h, double s, double l) =>
-      HSLColor.fromAHSL(1, h, s / 100, l / 100).toColor();
-
-  /// Theme-independent metallic silver accents (`--silver*`).
-  static Color silver(Brightness b) =>
-      b == Brightness.light ? hsl(215, 12, 70) : hsl(214, 12, 62);
-
-  static ThemeData build({String? themeKey, required Brightness brightness}) {
-    final light = brightness == Brightness.light;
-    final override = themePrimaries[themeKey];
-    final primary = override != null
-        ? hsl(override[0], override[1], override[2])
-        : (light ? hsl(215, 18, 27) : hsl(210, 22, 74));
-
-    final background = light ? hsl(220, 16, 97) : hsl(222, 20, 9);
-    final foreground = light ? hsl(222, 18, 11) : hsl(213, 24, 94);
-    final card = light ? hsl(0, 0, 100) : hsl(222, 18, 13);
-    final cardForeground = light ? hsl(222, 16, 16) : hsl(213, 24, 94);
-    final secondary = light ? hsl(214, 22, 95) : hsl(220, 16, 18);
-    final secondaryForeground = light ? hsl(222, 16, 20) : hsl(213, 24, 94);
-    final muted = light ? hsl(214, 20, 94) : hsl(220, 16, 18);
-    final mutedForeground = light ? hsl(218, 10, 40) : hsl(215, 14, 66);
-    final accent = light ? hsl(213, 24, 92) : hsl(216, 18, 24);
-    final accentForeground = light ? hsl(216, 22, 26) : hsl(210, 22, 84);
-    final destructive = light ? hsl(0, 70, 55) : hsl(0, 62, 45);
-    final border = light ? hsl(216, 18, 89) : hsl(220, 14, 22);
-    // `--primary-foreground`. With a themed (mid-lightness) primary the web still
-    // uses the base value: white in light mode, near-black in dark mode.
-    final onPrimary = light ? hsl(0, 0, 100) : hsl(222, 20, 10);
-
-    final scheme = ColorScheme(
-      brightness: brightness,
-      primary: primary,
-      onPrimary: onPrimary,
-      primaryContainer: accent,
-      onPrimaryContainer: accentForeground,
-      secondary: secondary,
-      onSecondary: secondaryForeground,
-      secondaryContainer: secondary,
-      onSecondaryContainer: secondaryForeground,
-      tertiary: accent,
-      onTertiary: accentForeground,
-      error: destructive,
-      onError: hsl(0, 0, 98),
-      surface: background,
-      onSurface: foreground,
-      onSurfaceVariant: mutedForeground,
-      surfaceContainerLowest: card,
-      surfaceContainerLow: card,
-      surfaceContainer: card,
-      surfaceContainerHigh: muted,
-      surfaceContainerHighest: muted,
-      outline: border,
-      outlineVariant: border,
-      inversePrimary: primary,
+  static ThemeData get light {
+    const scheme = ColorScheme(
+      brightness: Brightness.light,
+      primary: Kv.blue,
+      onPrimary: Colors.white,
+      primaryContainer: Kv.blueSoft,
+      onPrimaryContainer: Kv.blueDark,
+      secondary: Kv.ink,
+      onSecondary: Colors.white,
+      secondaryContainer: Color(0xFFEDEEF1),
+      onSecondaryContainer: Kv.ink,
+      tertiary: Kv.gold,
+      onTertiary: Colors.white,
+      tertiaryContainer: Kv.goldSoft,
+      onTertiaryContainer: Color(0xFF6B5221),
+      error: Kv.danger,
+      onError: Colors.white,
+      errorContainer: Kv.dangerSoft,
+      onErrorContainer: Color(0xFF8F1D1D),
+      surface: Kv.surface,
+      onSurface: Kv.ink,
+      onSurfaceVariant: Kv.muted,
+      surfaceContainerLowest: Kv.surface,
+      surfaceContainerLow: Color(0xFFFAFAFB),
+      surfaceContainer: Kv.bg,
+      surfaceContainerHigh: Color(0xFFEFF1F4),
+      surfaceContainerHighest: Color(0xFFE9ECF0),
+      outline: Color(0xFFD5D9E0),
+      outlineVariant: Kv.line,
+      inverseSurface: Kv.ink,
+      onInverseSurface: Colors.white,
+      inversePrimary: Color(0xFF9DBFE8),
+      shadow: Colors.black,
+      scrim: Colors.black,
+      surfaceTint: Colors.transparent,
     );
 
-    final base = ThemeData(
-      useMaterial3: true,
-      brightness: brightness,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: background,
-      fontFamily: 'Inter',
+    final base = ThemeData(useMaterial3: true, colorScheme: scheme, fontFamily: 'Inter');
+    final t = base.textTheme.apply(bodyColor: Kv.ink, displayColor: Kv.ink);
+    final text = t.copyWith(
+      displaySmall: t.displaySmall?.copyWith(fontFamily: Kv.serif, fontWeight: FontWeight.w600, letterSpacing: -0.5),
+      headlineMedium: t.headlineMedium?.copyWith(fontFamily: Kv.serif, fontWeight: FontWeight.w600, letterSpacing: -0.4),
+      headlineSmall: t.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3, fontSize: 22),
+      titleLarge: t.titleLarge?.copyWith(fontWeight: FontWeight.w700, fontSize: 19, letterSpacing: -0.2),
+      titleMedium: t.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 16),
+      titleSmall: t.titleSmall?.copyWith(fontWeight: FontWeight.w600, fontSize: 14),
+      bodyLarge: t.bodyLarge?.copyWith(fontSize: 15, height: 1.45),
+      bodyMedium: t.bodyMedium?.copyWith(fontSize: 14, height: 1.45),
+      bodySmall: t.bodySmall?.copyWith(fontSize: 12.5, color: Kv.muted, height: 1.4),
+      labelLarge: t.labelLarge?.copyWith(fontWeight: FontWeight.w600, fontSize: 15),
+      labelMedium: t.labelMedium?.copyWith(fontWeight: FontWeight.w500, color: Kv.muted),
+      labelSmall: t.labelSmall?.copyWith(fontWeight: FontWeight.w600, letterSpacing: 0.2, color: Kv.muted),
     );
 
-    // h1–h6 on the web: Playfair Display, tracking-tight, in the primary colour.
-    TextStyle? heading(TextStyle? s) =>
-        s?.copyWith(fontFamily: 'PlayfairDisplay', color: primary, letterSpacing: -0.4);
-    final text = base.textTheme;
+    const buttonShape = RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(Kv.radiusSm)));
+    const buttonSize = Size(64, 52);
+    final inputBorder = OutlineInputBorder(borderRadius: Kv.smallRadius, borderSide: const BorderSide(color: Kv.line));
 
-    final radius = BorderRadius.circular(8); // --radius: 0.5rem
     return base.copyWith(
-      textTheme: text.copyWith(
-        displayLarge: heading(text.displayLarge),
-        displayMedium: heading(text.displayMedium),
-        displaySmall: heading(text.displaySmall),
-        headlineLarge: heading(text.headlineLarge),
-        headlineMedium: heading(text.headlineMedium),
-        headlineSmall: heading(text.headlineSmall),
-        titleLarge: heading(text.titleLarge),
-      ),
+      textTheme: text,
+      scaffoldBackgroundColor: Kv.bg,
+      splashFactory: InkSparkle.splashFactory,
       appBarTheme: AppBarTheme(
-        backgroundColor: card,
-        foregroundColor: foreground,
+        backgroundColor: Kv.surface,
+        foregroundColor: Kv.ink,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        scrolledUnderElevation: 0,
-        shape: Border(bottom: BorderSide(color: border)),
-        titleTextStyle: heading(text.titleLarge)?.copyWith(fontWeight: FontWeight.w600),
+        scrolledUnderElevation: 0.5,
+        shadowColor: Colors.black26,
+        centerTitle: false,
+        titleTextStyle: text.titleMedium?.copyWith(fontSize: 18, fontWeight: FontWeight.w600, color: Kv.ink),
+        systemOverlayStyle: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        height: 68,
+        backgroundColor: Kv.surface,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: Kv.blueSoft,
+        elevation: 0,
+        labelTextStyle: WidgetStateProperty.resolveWith((s) => TextStyle(
+              fontSize: 12,
+              fontWeight: s.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.w500,
+              color: s.contains(WidgetState.selected) ? Kv.ink : Kv.muted,
+            )),
+        iconTheme: WidgetStateProperty.resolveWith(
+            (s) => IconThemeData(size: 24, color: s.contains(WidgetState.selected) ? Kv.blue : Kv.muted)),
       ),
       cardTheme: CardThemeData(
-        color: card,
+        color: Kv.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: border)),
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: Kv.cardRadius, side: const BorderSide(color: Kv.line)),
       ),
-      dividerTheme: DividerThemeData(color: border),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: border)),
-        enabledBorder:
-            OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: border)),
-        focusedBorder: OutlineInputBorder(
-            borderRadius: radius, borderSide: BorderSide(color: primary, width: 2)),
-      ),
+      dividerTheme: const DividerThemeData(color: Kv.line, thickness: 1, space: 1),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-            shape: RoundedRectangleBorder(borderRadius: radius),
-            textStyle: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w500)),
+          minimumSize: buttonSize,
+          shape: buttonShape,
+          textStyle: const TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w600),
+          disabledBackgroundColor: const Color(0xFFDDE1E7),
+          disabledForegroundColor: Kv.subtle,
+        ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-            shape: RoundedRectangleBorder(borderRadius: radius),
-            side: BorderSide(color: border),
-            foregroundColor: foreground),
+          minimumSize: buttonSize,
+          shape: buttonShape,
+          foregroundColor: Kv.ink,
+          side: const BorderSide(color: Color(0xFFD5D9E0)),
+          textStyle: const TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: Kv.blue,
+          textStyle: const TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Kv.surface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        border: inputBorder,
+        enabledBorder: inputBorder,
+        focusedBorder: inputBorder.copyWith(borderSide: const BorderSide(color: Kv.blue, width: 1.6)),
+        errorBorder: inputBorder.copyWith(borderSide: const BorderSide(color: Kv.danger)),
+        focusedErrorBorder: inputBorder.copyWith(borderSide: const BorderSide(color: Kv.danger, width: 1.6)),
+        labelStyle: const TextStyle(color: Kv.muted),
+        floatingLabelStyle: const TextStyle(color: Kv.blue, fontWeight: FontWeight.w500),
+        hintStyle: const TextStyle(color: Kv.subtle),
+        prefixIconColor: Kv.muted,
       ),
       chipTheme: ChipThemeData(
-          shape: RoundedRectangleBorder(borderRadius: radius), side: BorderSide(color: border)),
-      extensions: [KvColors(cardForeground: cardForeground, silver: silver(brightness))],
+        backgroundColor: Kv.surface,
+        selectedColor: Kv.blueSoft,
+        side: const BorderSide(color: Kv.line),
+        shape: const StadiumBorder(),
+        labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500, color: Kv.ink),
+        secondaryLabelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: Kv.blueDark),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        showCheckmark: false,
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Kv.surface,
+        surfaceTintColor: Colors.transparent,
+        showDragHandle: true,
+        dragHandleColor: Color(0xFFD5D9E0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: Kv.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titleTextStyle: text.titleLarge,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Kv.ink,
+        contentTextStyle: const TextStyle(fontFamily: 'Inter', color: Colors.white, fontSize: 14),
+        actionTextColor: const Color(0xFF9DBFE8),
+        shape: RoundedRectangleBorder(borderRadius: Kv.smallRadius),
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      ),
+      listTileTheme: const ListTileThemeData(
+        iconColor: Kv.ink,
+        contentPadding: EdgeInsets.symmetric(horizontal: 16),
+        minVerticalPadding: 12,
+        titleTextStyle: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w500, color: Kv.ink),
+        subtitleTextStyle: TextStyle(fontFamily: 'Inter', fontSize: 13, color: Kv.muted),
+      ),
+      tabBarTheme: const TabBarThemeData(
+        labelColor: Kv.ink,
+        unselectedLabelColor: Kv.muted,
+        indicatorColor: Kv.blue,
+        indicatorSize: TabBarIndicatorSize.label,
+        dividerColor: Kv.line,
+        labelStyle: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 14),
+        unselectedLabelStyle: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w500, fontSize: 14),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: SegmentedButton.styleFrom(
+          selectedBackgroundColor: Kv.blueSoft,
+          selectedForegroundColor: Kv.blueDark,
+          side: const BorderSide(color: Kv.line),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? Colors.white : null),
+        trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? Kv.blue : null),
+      ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(color: Kv.blue),
+      badgeTheme: const BadgeThemeData(backgroundColor: Kv.danger, textColor: Colors.white),
+      pageTransitionsTheme: const PageTransitionsTheme(builders: {
+        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      }),
     );
   }
-}
-
-/// Web tokens with no Material slot.
-class KvColors extends ThemeExtension<KvColors> {
-  const KvColors({required this.cardForeground, required this.silver});
-
-  final Color cardForeground;
-  final Color silver;
-
-  @override
-  KvColors copyWith({Color? cardForeground, Color? silver}) => KvColors(
-      cardForeground: cardForeground ?? this.cardForeground, silver: silver ?? this.silver);
-
-  @override
-  KvColors lerp(KvColors? other, double t) => other == null
-      ? this
-      : KvColors(
-          cardForeground: Color.lerp(cardForeground, other.cardForeground, t)!,
-          silver: Color.lerp(silver, other.silver, t)!);
 }

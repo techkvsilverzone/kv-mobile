@@ -9,6 +9,10 @@ import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/phone_verification_screen.dart';
 import '../../features/auth/presentation/profile_screen.dart';
+import '../../features/account/account_screen.dart';
+import '../../features/returns/returns_screen.dart';
+import '../../app/shell.dart';
+import '../../app/splash_screen.dart';
 import '../../features/auth/presentation/signup_screen.dart';
 import '../../features/cart/presentation/cart_screen.dart';
 import '../../features/catalog/presentation/product_detail_screen.dart';
@@ -39,79 +43,27 @@ import '../widgets/not_found_screen.dart';
 /// Sign-in screens: a signed-in user is sent on from these.
 const _authRoutes = {'/login', '/signup', '/forgot-password'};
 
-/// Pages that need a session, as the web's `RequireAuth` routes (payment,
-/// profile, change password, wishlist, dashboard, passbook) plus the app's own
-/// order and phone-verification screens. Everything else is open to guests.
-bool _requiresAuth(String location) =>
+/// Pages that need a session (the web's `RequireAuth` set plus the app's own order,
+/// returns and phone-verification screens). The Account tab itself is open: guests
+/// see a sign-in card there.
+bool requiresAuth(String location) =>
     location == '/checkout' ||
     location == '/wishlist' ||
     location == '/dashboard' ||
     location == '/notifications' ||
     location == '/verify-phone' ||
-    location.startsWith('/profile') ||
+    location == '/returns' ||
+    location.startsWith('/profile/') ||
     location.startsWith('/orders') ||
     location.startsWith('/order-confirmation') ||
     location.startsWith('/savings-scheme/passbook');
 
-class SplashScreen extends ConsumerStatefulWidget {
-  const SplashScreen({super.key});
-
-  @override
-  ConsumerState<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends ConsumerState<SplashScreen> {
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(
-        () => ref.read(authSessionProvider.notifier).restoreSession());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final session = ref.watch(authSessionProvider);
-    final error = session.restoreError;
-
-    return Scaffold(
-      body: Center(
-        child: error == null
-            ? const CircularProgressIndicator()
-            : Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.cloud_off,
-                        size: 48, color: Theme.of(context).colorScheme.outline),
-                    const SizedBox(height: 16),
-                    Text(error, textAlign: TextAlign.center),
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: () => ref
-                          .read(authSessionProvider.notifier)
-                          .restoreSession(),
-                      child: const Text('Try again'),
-                    ),
-                    TextButton(
-                      // Escape hatch: abandon the unverifiable token and sign in
-                      // fresh rather than being stranded on the splash screen.
-                      onPressed: () =>
-                          ref.read(authSessionProvider.notifier).clearSession(),
-                      child: const Text('Sign in instead'),
-                    ),
-                  ],
-                ),
-              ),
-      ),
-    );
-  }
-}
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 class _GoRouterRefreshNotifier extends ChangeNotifier {
   _GoRouterRefreshNotifier(Ref ref) {
-    ref.listen<AuthSessionState>(
-        authSessionProvider, (_, __) => notifyListeners());
+    ref.listen<AuthSessionState>(authSessionProvider, (_, __) => notifyListeners());
+    ref.listen<bool>(splashDoneProvider, (_, __) => notifyListeners());
   }
 }
 
@@ -121,10 +73,14 @@ final _routerRefreshProvider = Provider<_GoRouterRefreshNotifier>((ref) {
   return notifier;
 });
 
+GoRoute _page(String path, Widget Function(GoRouterState s) build, {List<RouteBase> routes = const []}) =>
+    GoRoute(path: path, builder: (context, state) => build(state), routes: routes);
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refresh = ref.watch(_routerRefreshProvider);
 
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     errorBuilder: (context, state) => const NotFoundScreen(),
     refreshListenable: refresh,
@@ -132,163 +88,127 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final session = ref.read(authSessionProvider);
       final location = state.matchedLocation;
 
-      // "Restoring" also covers "restore failed, recoverably" — the splash
-      // screen shows a retry, so holding the user here is intentional.
-      if (session.isRestoring) {
+      // Hold the animated splash until both the animation and the session restore finish.
+      // "Restoring" also covers "restore failed, recoverably" — the splash offers a retry.
+      if (session.isRestoring || !ref.read(splashDoneProvider)) {
         return location == '/splash' ? null : '/splash';
       }
       if (!session.isAuthenticated) {
         if (location == '/splash') return '/home';
-        if (_requiresAuth(location)) {
-          return Uri(
-              path: '/login',
-              queryParameters: {'from': state.uri.toString()}).toString();
+        if (requiresAuth(location)) {
+          return Uri(path: '/login', queryParameters: {'from': state.uri.toString()}).toString();
         }
         return null;
       }
       if (location == '/splash' || _authRoutes.contains(location)) {
-        // Just signed up: signup has already sent a WhatsApp code, so offer to enter it before Home.
         final user = session.user!;
-        if (session.justSignedUp &&
-            !user.phoneVerified &&
-            (user.phone ?? '').isNotEmpty) {
+        if (session.justSignedUp && !user.phoneVerified && (user.phone ?? '').isNotEmpty) {
           return '/verify-phone?sent=1';
         }
-        // Back to the page that asked for sign-in.
-        final from = state.uri.queryParameters['from'];
-        return from != null &&
-                from.startsWith('/') &&
-                !from.startsWith('/login')
-            ? from
-            : '/home';
+        return safeReturnPath(state.uri.queryParameters['from']);
       }
       return null;
     },
     routes: [
-      GoRoute(
-          path: '/splash', builder: (context, state) => const SplashScreen()),
-      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      _page('/splash', (_) => const SplashScreen()),
+      _page('/login', (s) => LoginScreen(from: s.uri.queryParameters['from'])),
       GoRoute(
         path: '/signup',
         builder: (context, state) => SignupScreen(
-            initialPhone:
-                state.extra as String? ?? state.uri.queryParameters['phone'],
+            initialPhone: state.extra as String? ?? state.uri.queryParameters['phone'],
             stallLink: state.uri.queryParameters['stall'] == '1'),
       ),
-      GoRoute(
-        path: '/forgot-password',
-        builder: (context, state) => const ForgotPasswordScreen(),
-      ),
-      GoRoute(
-        path: '/verify-phone',
-        builder: (context, state) => PhoneVerificationScreen(
-            codeAlreadySent: state.uri.queryParameters['sent'] == '1'),
-      ),
-      GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
-      GoRoute(
-        path: '/shop',
-        builder: (context, state) => ShopScreen(
-            initialCategory: state.uri.queryParameters['category'],
-            initialSearch: state.uri.queryParameters['search']),
-      ),
-      GoRoute(
-        path: '/product/:id',
-        builder: (context, state) =>
-            ProductDetailScreen(productId: state.pathParameters['id']!),
-      ),
-      GoRoute(
-          path: '/silver-rate',
-          builder: (context, state) => const RatesScreen()),
-      GoRoute(
-          path: '/offers', builder: (context, state) => const OffersScreen()),
-      GoRoute(
-        path: '/savings-scheme',
-        builder: (context, state) {
-          // Old deep links (?passbook=...) land on the passbook's own page, as on the web.
-          final legacy = state.uri.queryParameters['passbook'];
-          return legacy != null && legacy.trim().isNotEmpty
-              ? PassbookScreen(passbookNumber: legacy.trim())
-              : const SavingsSchemeScreen();
-        },
-        routes: [
-          GoRoute(
-            path: 'passbook/:number',
-            builder: (context, state) =>
-                PassbookScreen(passbookNumber: state.pathParameters['number']!),
-          ),
+      _page('/forgot-password', (_) => const ForgotPasswordScreen()),
+      _page('/verify-phone', (s) => PhoneVerificationScreen(codeAlreadySent: s.uri.queryParameters['sent'] == '1')),
+
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, shell) => AppShell(shell: shell),
+        branches: [
+          StatefulShellBranch(routes: [_page('/home', (_) => const HomeScreen())]),
+          StatefulShellBranch(routes: [
+            _page('/shop', (s) => ShopScreen(
+                initialCategory: s.uri.queryParameters['category'],
+                initialSearch: s.uri.queryParameters['search'])),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/savings-scheme',
+              builder: (context, state) {
+                // Old deep links (?passbook=...) land on the passbook page, as on the web.
+                final legacy = state.uri.queryParameters['passbook'];
+                return legacy != null && legacy.trim().isNotEmpty
+                    ? PassbookScreen(passbookNumber: legacy.trim())
+                    : const SavingsSchemeScreen();
+              },
+              routes: [
+                GoRoute(
+                  path: 'passbook/:number',
+                  parentNavigatorKey: rootNavigatorKey,
+                  builder: (context, state) => PassbookScreen(passbookNumber: state.pathParameters['number']!),
+                ),
+              ],
+            ),
+          ]),
+          StatefulShellBranch(routes: [_page('/cart', (_) => const CartScreen())]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/profile',
+              builder: (context, state) => const AccountScreen(),
+              routes: [
+                GoRoute(path: 'edit', parentNavigatorKey: rootNavigatorKey, builder: (c, s) => const ProfileScreen()),
+                GoRoute(
+                    path: 'password', parentNavigatorKey: rootNavigatorKey, builder: (c, s) => const ChangePasswordScreen()),
+                GoRoute(
+                  path: 'addresses',
+                  parentNavigatorKey: rootNavigatorKey,
+                  builder: (c, s) => const AddressBookScreen(),
+                  routes: [
+                    GoRoute(path: 'new', parentNavigatorKey: rootNavigatorKey, builder: (c, s) => const AddressFormScreen()),
+                    GoRoute(
+                      path: 'edit',
+                      parentNavigatorKey: rootNavigatorKey,
+                      // The address travels as `extra` so the form renders without a second fetch.
+                      builder: (c, s) => AddressFormScreen(existing: s.extra as Address?),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ]),
         ],
       ),
-      GoRoute(
-          path: '/dashboard',
-          builder: (context, state) => const DashboardScreen()),
-      GoRoute(
-          path: '/wishlist',
-          builder: (context, state) => const WishlistScreen()),
-      GoRoute(
-          path: '/gift-vouchers',
-          builder: (context, state) => const GiftVouchersScreen()),
-      GoRoute(
-        path: '/order-confirmation/:id',
-        builder: (context, state) =>
-            OrderConfirmationScreen(orderId: state.pathParameters['id']!),
-      ),
-      GoRoute(path: '/notifications', builder: (context, state) => const NotificationsScreen()),
-      GoRoute(path: '/about', builder: (context, state) => const AboutScreen()),
-      GoRoute(
-          path: '/contact', builder: (context, state) => const ContactScreen()),
-      GoRoute(path: '/faq', builder: (context, state) => const FaqScreen()),
-      GoRoute(
-          path: '/privacy-policy',
-          builder: (context, state) => const PrivacyPolicyScreen()),
-      GoRoute(path: '/terms', builder: (context, state) => const TermsScreen()),
-      GoRoute(
-          path: '/recently-viewed',
-          builder: (context, state) => const RecentlyViewedScreen()),
-      GoRoute(path: '/cart', builder: (context, state) => const CartScreen()),
-      GoRoute(
-          path: '/checkout',
-          builder: (context, state) => const CheckoutScreen()),
-      GoRoute(
-          path: '/orders', builder: (context, state) => const OrdersScreen()),
+
+      // Full-screen pages above the tab bar.
+      _page('/product/:id', (s) => ProductDetailScreen(productId: s.pathParameters['id']!)),
+      _page('/checkout', (_) => const CheckoutScreen()),
+      _page('/orders', (_) => const OrdersScreen()),
       GoRoute(
         path: '/orders/:id',
-        builder: (context, state) =>
-            OrderDetailScreen(orderId: state.pathParameters['id']!),
+        builder: (context, state) => OrderDetailScreen(orderId: state.pathParameters['id']!),
         routes: [
-          GoRoute(
-            path: 'invoice',
-            builder: (context, state) =>
-                InvoiceScreen(orderId: state.pathParameters['id']!),
-          ),
+          GoRoute(path: 'invoice', builder: (c, s) => InvoiceScreen(orderId: s.pathParameters['id']!)),
         ],
       ),
-      GoRoute(
-        path: '/profile',
-        builder: (context, state) => const ProfileScreen(),
-        routes: [
-          GoRoute(
-            path: 'password',
-            builder: (context, state) => const ChangePasswordScreen(),
-          ),
-          GoRoute(
-            path: 'addresses',
-            builder: (context, state) => const AddressBookScreen(),
-            routes: [
-              GoRoute(
-                path: 'new',
-                builder: (context, state) => const AddressFormScreen(),
-              ),
-              GoRoute(
-                path: 'edit',
-                // The address travels as `extra` rather than an id path param so
-                // the form renders instantly without a second fetch.
-                builder: (context, state) =>
-                    AddressFormScreen(existing: state.extra as Address?),
-              ),
-            ],
-          ),
-        ],
-      ),
+      _page('/order-confirmation/:id', (s) => OrderConfirmationScreen(orderId: s.pathParameters['id']!)),
+      _page('/returns', (_) => const ReturnsScreen()),
+      _page('/notifications', (_) => const NotificationsScreen()),
+      _page('/wishlist', (_) => const WishlistScreen()),
+      _page('/dashboard', (_) => const DashboardScreen()),
+      _page('/silver-rate', (_) => const RatesScreen()),
+      _page('/offers', (_) => const OffersScreen()),
+      _page('/recently-viewed', (_) => const RecentlyViewedScreen()),
+      _page('/gift-vouchers', (_) => const GiftVouchersScreen()),
+      _page('/about', (_) => const AboutScreen()),
+      _page('/contact', (_) => const ContactScreen()),
+      _page('/faq', (_) => const FaqScreen()),
+      _page('/privacy-policy', (_) => const PrivacyPolicyScreen()),
+      _page('/terms', (_) => const TermsScreen()),
     ],
   );
 });
+
+/// Where to go after signing in: the page that asked for it, else Home.
+String safeReturnPath(String? from) =>
+    from != null && from.startsWith('/') && !from.startsWith('/login') && !from.startsWith('/signup')
+        ? from
+        : '/home';

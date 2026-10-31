@@ -53,6 +53,17 @@ void main() {
     await controller.load();
   });
 
+  test('restore puts a removed line back where it was (swipe undo)', () {
+    controller.add(_product(), unitPrice: 2000, variant: const ProductVariant(label: 'S', weight: '20 g'));
+    controller.add(_product(id: 'p2'), unitPrice: 2000);
+    final first = controller.state.first;
+    controller.remove(first.lineKey);
+    controller.restore(first, 0);
+    expect(controller.state.map((e) => e.lineKey), [first.lineKey, 'p2::20.0 g']);
+    controller.restore(first, 0); // already present: no duplicate
+    expect(controller.state.length, 2);
+  });
+
   test('adds a line', () {
     controller.add(_product(), unitPrice: 2000);
     expect(controller.state.length, 1);
@@ -155,5 +166,25 @@ void main() {
     // variantWeight is the only channel a variant has to the server's pricing.
     expect(line['variantWeight'], '30 g');
     expect(line.containsKey('productId'), isFalse);
+  });
+
+  test('refreshAvailability re-prices lines at their chosen size and refreshes stock', () async {
+    final stale = Product.fromJson({
+      '_id': 'p9', 'name': 'Bell', 'weight': 10, 'price': 650, 'listedPrice': 650, 'isFixedPrice': false,
+      'purity': '925', 'inStock': true, 'stockAvailable': 5,
+      'variants': [{'label': 'L', 'weight': '20 g'}],
+    });
+    controller.add(stale, unitPrice: 650);
+    controller.add(stale, unitPrice: 650, variant: stale.variants.first);
+
+    final fresh = Product.fromJson({
+      '_id': 'p9', 'name': 'Bell', 'weight': 10, 'price': 1017.5, 'listedPrice': 1350, 'isFixedPrice': false,
+      'purity': '925', 'makingChargePercent': 10, 'inStock': true, 'stockAvailable': 2,
+      'pricing': {'ratePerGram': 100, 'purityFraction': 0.925},
+    });
+    controller.refreshAvailability({'p9': fresh});
+
+    expect(controller.state.map((e) => e.unitPrice), [1017.5, 2035]);
+    expect(controller.state.every((e) => e.stockAvailable == 2), isTrue);
   });
 }

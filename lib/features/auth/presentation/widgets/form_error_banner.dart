@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/ui/kv_ui.dart';
 
 /// Surfaces the server's actual failure message above a form.
 ///
@@ -12,24 +13,16 @@ class FormErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(color: Kv.dangerSoft, borderRadius: Kv.smallRadius),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.error_outline, size: 20, color: scheme.onErrorContainer),
-          const SizedBox(width: 8),
+          const Icon(Icons.error_outline_rounded, size: 20, color: Kv.danger),
+          const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: scheme.onErrorContainer),
-            ),
+            child: Text(message, style: const TextStyle(color: Color(0xFF991B1B), fontSize: 14, height: 1.35)),
           ),
         ],
       ),

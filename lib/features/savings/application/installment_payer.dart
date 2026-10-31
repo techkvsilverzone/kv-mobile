@@ -6,6 +6,7 @@ import '../../../core/api/api_exception.dart';
 import '../../../core/auth/auth_session.dart';
 import '../../../core/config/env.dart';
 import '../../../core/format/currency.dart';
+import '../../../core/ui/components.dart' show showKvToast;
 import '../data/savings_models.dart';
 import '../data/savings_repository.dart';
 
@@ -48,23 +49,8 @@ final _plain = NumberFormat('#,##,##0.##', 'en_IN');
   );
 }
 
-void showToast(BuildContext context, String title, String body,
-    {bool error = false}) {
-  final scheme = Theme.of(context).colorScheme;
-  // A newer toast replaces the current one rather than queueing behind it.
-  ScaffoldMessenger.of(context)
-    ..removeCurrentSnackBar()
-    ..showSnackBar(SnackBar(
-      backgroundColor: error ? scheme.error : null,
-      content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-            if (body.isNotEmpty) Text(body),
-          ]),
-    ));
-}
+void showToast(BuildContext context, String title, String body, {bool error = false}) =>
+    showKvToast(context, title, message: body, error: error);
 
 /// Pays a savings installment through Razorpay (kv-ui useInstallmentPayment).
 /// Owned by a screen's State: create in initState, [dispose] in dispose.

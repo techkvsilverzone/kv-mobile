@@ -56,9 +56,28 @@ MetalRate? matchSilverRate(List<MetalRate> rates, String? purity) {
   return rates.first;
 }
 
+/// Server `resolveChargeAmount`: a percentage of the metal value, or flat rupees.
 double resolveChargeAmount(ProductCharge? charge, double base) {
-  if (charge == null || !charge.value.isFinite || charge.value < 0) return 0;
+  if (charge == null || !charge.value.isFinite || charge.value <= 0) return 0;
   return charge.type == ChargeType.amount ? charge.value : (base * charge.value) / 100;
+}
+
+double _round2(double v) => (v * 100).round() / 100;
+
+/// Server `resolvePurityFraction`: "925" → 0.925, "92.5" → 0.925, "999" → 0.999;
+/// absent → 0.925 for silver materials, else 1.
+double resolvePurityFraction(String? purity, String? material) {
+  // Karat notation ("22K") is out of 24.
+  final karat = RegExp(r'(\d{1,2}(?:\.\d+)?)\s*k(?:t|arat)?\b', caseSensitive: false).firstMatch(purity ?? '');
+  final k = karat == null ? null : double.tryParse(karat.group(1)!);
+  if (k != null && k > 0 && k <= 24) return k / 24;
+  final match = RegExp(r'[\d.]+').firstMatch(purity ?? '');
+  final value = match == null ? null : double.tryParse(match.group(0)!);
+  if (value != null && value.isFinite && value > 0) {
+    final f = value > 1 ? (value >= 100 ? value / 1000 : value / 100) : value;
+    return f.clamp(0, 1).toDouble();
+  }
+  return RegExp('silver', caseSensitive: false).hasMatch(material ?? '') ? 0.925 : 1;
 }
 
 class ProductPricingInput {
@@ -68,17 +87,35 @@ class ProductPricingInput {
     this.weight,
     this.weightInGrams,
     this.purity,
+    this.material,
     this.makingCharge,
     this.wastage,
+    this.makingCharges,
+    this.makingChargePercent,
+    this.makingChargePerGram,
+    this.serverRatePerGram,
+    this.serverPurityFraction,
   });
 
+  /// The admin's listed price (the static fallback).
   final double price;
   final bool isFixedPrice;
   final String? weight;
   final double? weightInGrams;
   final String? purity;
+  final String? material;
   final ProductCharge? makingCharge;
   final ProductCharge? wastage;
+
+  /// Legacy making-charge fields; null means "not set".
+  final double? makingCharges;
+  final double? makingChargePercent;
+  final double? makingChargePerGram;
+
+  /// The rate and purity the server priced this product with (`pricing.*` on the
+  /// product response). Using them keeps the app's price equal to the charge.
+  final double? serverRatePerGram;
+  final double? serverPurityFraction;
 }
 
 class ProductPriceBreakdown {
@@ -94,6 +131,8 @@ class ProductPriceBreakdown {
   });
 
   final bool isFixedPrice;
+
+  /// True when priced live from the metal rate ("live" basis on the server).
   final bool computed;
   final double? ratePerGram;
   final double? grams;
@@ -103,12 +142,17 @@ class ProductPriceBreakdown {
   final double preGstPrice;
 }
 
+/// A port of kv-api `PricingService.computeUnitPrice`, so what the app shows is what
+/// checkout charges. Fixed-price → listed price. Otherwise live only when a rate, a
+/// weight and some charge input (new `{type,value}` or a non-null legacy field) exist:
+/// weight × rate × purity + making + wastage. Anything else → the listed price.
+/// [rates] (today's rates) is only a fallback when the product carries no server rate.
 ProductPriceBreakdown computeProductPricing(
   ProductPricingInput product,
   List<MetalRate> rates, {
   double? gramsOverride,
 }) {
-  final fallback = ProductPriceBreakdown(
+  final listed = ProductPriceBreakdown(
     isFixedPrice: product.isFixedPrice,
     computed: false,
     ratePerGram: null,
@@ -116,32 +160,43 @@ ProductPriceBreakdown computeProductPricing(
     metalValue: null,
     makingCharge: null,
     wastage: null,
-    preGstPrice: product.price,
+    preGstPrice: _round2(product.price),
   );
+  if (product.isFixedPrice) return listed;
 
-  if (product.isFixedPrice) return fallback;
+  final grams = (gramsOverride != null && gramsOverride > 0)
+      ? gramsOverride
+      : (product.weightInGrams ?? parseGrams(product.weight) ?? 0);
+  final rate = product.serverRatePerGram ?? matchSilverRate(rates, product.purity)?.ratePerGram;
+  final hasNewCharge = product.makingCharge != null || product.wastage != null;
+  final hasLegacy =
+      product.makingChargePerGram != null || product.makingChargePercent != null || product.makingCharges != null;
 
-  final hasConfiguredCharge = product.makingCharge != null || product.wastage != null;
-  final grams = gramsOverride ?? product.weightInGrams ?? parseGrams(product.weight);
-  final ratePerGram = matchSilverRate(rates, product.purity)?.ratePerGram;
+  if (rate == null || rate <= 0 || grams <= 0 || !(hasNewCharge || hasLegacy)) return listed;
 
-  if (grams == null || grams <= 0 || ratePerGram == null || ratePerGram <= 0 || !hasConfiguredCharge) {
-    return fallback;
+  final purity = product.serverPurityFraction ?? resolvePurityFraction(product.purity, product.material);
+  final metalValue = grams * rate * purity;
+  final double making;
+  if (product.makingCharge != null) {
+    making = resolveChargeAmount(product.makingCharge, metalValue);
+  } else if (product.makingChargePerGram != null) {
+    making = product.makingChargePerGram! * grams;
+  } else if (product.makingChargePercent != null) {
+    making = metalValue * product.makingChargePercent! / 100;
+  } else {
+    making = product.makingCharges ?? 0;
   }
-
-  final metalValue = grams * ratePerGram;
-  final makingCharge = resolveChargeAmount(product.makingCharge, metalValue);
   final wastage = resolveChargeAmount(product.wastage, metalValue);
 
   return ProductPriceBreakdown(
     isFixedPrice: false,
     computed: true,
-    ratePerGram: ratePerGram,
+    ratePerGram: rate,
     grams: grams,
-    metalValue: metalValue,
-    makingCharge: makingCharge,
-    wastage: wastage,
-    preGstPrice: metalValue + makingCharge + wastage,
+    metalValue: _round2(metalValue),
+    makingCharge: _round2(making),
+    wastage: _round2(wastage),
+    preGstPrice: _round2(metalValue + making + wastage),
   );
 }
 
