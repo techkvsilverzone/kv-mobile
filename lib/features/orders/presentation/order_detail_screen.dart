@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/api/api_exception.dart';
 import '../../../core/format/currency.dart';
 import '../data/models/order.dart';
@@ -157,6 +158,7 @@ class _OrderBody extends StatelessWidget {
                   ),
                 _row(context, 'GST', formatInr(order.taxAmount)),
                 _row(context, 'Delivery', formatInr(order.deliveryFee)),
+                if (order.giftWrapFee > 0) _row(context, 'Gift wrapping', formatInr(order.giftWrapFee)),
                 const Divider(height: 20),
                 _row(context, 'Total paid', formatInr(order.grandTotal), bold: true),
                 const SizedBox(height: 8),
@@ -196,6 +198,18 @@ class _OrderBody extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 24),
+        // The web's "Actions" card.
+        FilledButton.icon(
+          onPressed: () => context.push('/orders/${order.id}/invoice'),
+          icon: const Icon(Icons.download, size: 16),
+          label: const Text('Download Invoice'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          onPressed: () => context.push('/contact'),
+          child: const Text('Need Help?'),
+        ),
+        const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: onResend,
           icon: const Icon(Icons.mail_outline),

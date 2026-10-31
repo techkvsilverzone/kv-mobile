@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "404563310495",
+    "project_id": "kv-silver-zone",
+    "storage_bucket": "kv-silver-zone.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:404563310495:android:9034616f8718a10993efaa",
+        "android_client_info": {
+          "package_name": "com.kvsilverzone.kv_silver_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCLXNzeDgo4C-Dm6sjTQ-n--eWgBTxxPfw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

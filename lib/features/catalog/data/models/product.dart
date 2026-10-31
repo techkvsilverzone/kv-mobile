@@ -77,6 +77,8 @@ class Product {
     this.material,
     this.purity,
     this.originalPrice,
+    this.isSale = false,
+    this.isNew = false,
     this.makingCharge,
     this.wastage,
   });
@@ -98,6 +100,8 @@ class Product {
   /// The raw stored price. Used as the fallback when a live rate is missing.
   final double listedPrice;
   final double? originalPrice;
+  final bool isSale;
+  final bool isNew;
 
   final bool isFixedPrice;
 
@@ -146,6 +150,8 @@ class Product {
       price: _toDouble(json['price']) ?? listed,
       listedPrice: listed,
       originalPrice: _toDouble(json['originalPrice']),
+      isSale: json['isSale'] == true,
+      isNew: (json['isNewItem'] ?? json['isNew']) == true,
       isFixedPrice: json['isFixedPrice'] == true,
       weightInGrams: weight,
       purity: json['purity']?.toString(),

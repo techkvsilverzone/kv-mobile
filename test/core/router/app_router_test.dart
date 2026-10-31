@@ -5,7 +5,9 @@ import 'package:kv_silver_mobile/core/api/api_exception.dart';
 import 'package:kv_silver_mobile/core/auth/auth_session.dart';
 import 'package:kv_silver_mobile/core/storage/secure_token_storage.dart';
 import 'package:kv_silver_mobile/features/auth/data/auth_repository.dart';
+import 'package:kv_silver_mobile/core/router/app_router.dart';
 import 'package:kv_silver_mobile/main.dart';
+import 'package:kv_silver_mobile/features/store_config/marquee_bar.dart';
 import '../../support/fake_auth_repository.dart';
 import '../../support/fake_secure_storage_client.dart';
 
@@ -21,6 +23,7 @@ void main() {
   ProviderContainer makeContainer() {
     final container = ProviderContainer(
       overrides: [
+        marqueeAnimatedProvider.overrideWithValue(false),
         secureTokenStorageProvider.overrideWithValue(storage),
         authRepositoryProvider.overrideWithValue(repo),
       ],
@@ -30,17 +33,27 @@ void main() {
   }
 
   Future<void> pumpApp(WidgetTester tester, ProviderContainer container) async {
+    // Room for the marquee strip above every screen.
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: const KvSilverMobileApp()),
     );
     await tester.pumpAndSettle();
   }
 
-  testWidgets('lands on login when there is no stored token', (tester) async {
+  Future<void> go(WidgetTester tester, ProviderContainer container, String location) async {
+    container.read(appRouterProvider).go(location);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('a guest lands on home without being asked to sign in', (tester) async {
     final container = makeContainer();
     await pumpApp(tester, container);
 
-    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
+    expect(find.text('Welcome Back'), findsNothing);
     expect(repo.getMeCalls, 0);
   });
 
@@ -51,43 +64,58 @@ void main() {
 
     await pumpApp(tester, container);
 
-    expect(find.text('Welcome, Asha'), findsOneWidget);
+    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
     expect(repo.getMeCalls, 1);
   });
 
-  testWidgets('signing in redirects to home off the auth-state change', (tester) async {
+  testWidgets('a protected page sends a guest to login, then back there after signing in', (tester) async {
     final container = makeContainer();
     await pumpApp(tester, container);
-    expect(find.text('Welcome back'), findsOneWidget);
+    await go(tester, container, '/profile');
+    expect(find.text('Welcome Back'), findsOneWidget);
 
     await container
         .read(authSessionProvider.notifier)
         .setSession(user: buildUser(name: 'Ravi'), token: 'token-123');
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome, Ravi'), findsOneWidget);
+    expect(find.text('My Account'), findsOneWidget);
   });
 
-  testWidgets('clearing the session bounces back to login', (tester) async {
+  testWidgets('signing in from the login screen redirects to home', (tester) async {
+    final container = makeContainer();
+    await pumpApp(tester, container);
+    await go(tester, container, '/login');
+
+    await container
+        .read(authSessionProvider.notifier)
+        .setSession(user: buildUser(name: 'Ravi'), token: 'token-123');
+    await tester.pumpAndSettle();
+
+    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
+  });
+
+  testWidgets('clearing the session on a protected page bounces back to login', (tester) async {
     await storage.saveToken('good-token');
     final container = makeContainer();
     await pumpApp(tester, container);
+    await go(tester, container, '/orders');
 
     await container.read(authSessionProvider.notifier).clearSession();
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Welcome Back'), findsOneWidget);
   });
 
   testWidgets('signup is reachable while signed out', (tester) async {
     final container = makeContainer();
     await pumpApp(tester, container);
+    await go(tester, container, '/login');
 
     await tester.tap(find.widgetWithText(TextButton, 'Sign up'));
     await tester.pumpAndSettle();
 
-    // Would have been bounced to /login if /signup were not public.
-    expect(find.text('Create your account'), findsOneWidget);
+    expect(find.text('Join KV Silver Zone for exclusive offers'), findsOneWidget);
   });
 
   testWidgets('an unreachable server holds on splash with a retry instead of logging out',
@@ -96,6 +124,10 @@ void main() {
     repo.getMeError = const NetworkException('Unable to reach the server.');
     final container = makeContainer();
 
+    // Room for the marquee strip above every screen.
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: const KvSilverMobileApp()),
     );
@@ -104,7 +136,7 @@ void main() {
 
     expect(find.text('Unable to reach the server.'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
-    expect(find.text('Welcome back'), findsNothing);
+    expect(find.text('Welcome Back'), findsNothing);
 
     // The token survives so the retry can succeed.
     expect(await storage.readToken(), 'good-token');
@@ -114,6 +146,6 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Try again'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome, Asha'), findsOneWidget);
+    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
   });
 }

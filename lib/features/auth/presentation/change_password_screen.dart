@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import '../../../core/validation/validators.dart';
+import '../../savings/application/installment_payer.dart';
 import '../application/auth_controller.dart';
-import 'widgets/form_error_banner.dart';
 
-/// Matches the web: no current-password field, because `PUT /users/:id/password`
-/// does not ask for one. The route is behind auth, so possession of a valid
-/// token is the only proof required.
+/// kv-ui pages/ChangePassword.tsx. No current-password field, because
+/// `PUT /users/:id/password` does not ask for one; the route is behind auth.
 class ChangePasswordScreen extends ConsumerStatefulWidget {
   const ChangePasswordScreen({super.key});
 
@@ -15,12 +12,17 @@ class ChangePasswordScreen extends ConsumerStatefulWidget {
   ConsumerState<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
 }
 
+/// Web `getPasswordErrorMessage`.
+String passwordErrorMessage(AuthSubmission r) => switch (r.statusCode) {
+      400 => 'Password is weak or invalid. Please use a stronger password.',
+      403 => "You are not allowed to change another user's password.",
+      404 => 'User not found.',
+      _ => r.error ?? 'Failed to change password.',
+    };
+
 class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
-  final _formKey = GlobalKey<FormState>();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
-  bool _obscure = true;
-  String? _error;
 
   @override
   void dispose() {
@@ -30,81 +32,89 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _error = null);
+    final password = _passwordCtrl.text;
+    if (password.trim().isEmpty) {
+      showToast(context, 'Password required', 'Please enter a new password.', error: true);
+      return;
+    }
+    if (password != _confirmCtrl.text) {
+      showToast(context, 'Passwords do not match', 'Confirm password must match the new password.',
+          error: true);
+      return;
+    }
 
-    final result =
-        await ref.read(authControllerProvider.notifier).changePassword(_passwordCtrl.text);
+    final result = await ref.read(authControllerProvider.notifier).changePassword(password);
     if (!mounted) return;
 
     if (result.ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Your password has been changed.')),
-      );
-      context.pop();
+      _passwordCtrl.clear();
+      _confirmCtrl.clear();
+      showToast(context, 'Password changed', 'Your password has been updated successfully.');
     } else {
-      setState(() => _error = result.error);
+      showToast(context, 'Change password failed', passwordErrorMessage(result), error: true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final busy = ref.watch(authControllerProvider);
+    final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Change password')),
+      appBar: AppBar(title: const Text('Change Password')),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Form(
-              key: _formKey,
+          padding: const EdgeInsets.all(16),
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (_error != null) ...[
-                    FormErrorBanner(message: _error!),
-                    const SizedBox(height: 16),
-                  ],
-                  TextFormField(
+                  Text('Change Password',
+                      style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  Text('Update your account password securely.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 24),
+                  TextField(
                     controller: _passwordCtrl,
                     enabled: !busy,
-                    obscureText: _obscure,
+                    obscureText: true,
                     autofillHints: const [AutofillHints.newPassword],
-                    decoration: InputDecoration(
-                      labelText: 'New password',
-                      helperText: 'At least 6 characters',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                            _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                        tooltip: _obscure ? 'Show password' : 'Hide password',
-                        onPressed: () => setState(() => _obscure = !_obscure),
-                      ),
+                    decoration: const InputDecoration(
+                      labelText: 'New Password',
+                      hintText: 'Enter new password',
                     ),
-                    // The web omits this check client-side and lets the server
-                    // reject it; validating here avoids the wasted round trip.
-                    validator: validatePassword,
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
+                  TextField(
                     controller: _confirmCtrl,
                     enabled: !busy,
-                    obscureText: _obscure,
+                    obscureText: true,
                     decoration: const InputDecoration(
-                      labelText: 'Confirm new password',
-                      prefixIcon: Icon(Icons.lock_outline),
+                      labelText: 'Confirm New Password',
+                      hintText: 'Confirm new password',
                     ),
-                    validator: (v) => validateConfirmPassword(v, _passwordCtrl.text),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                   FilledButton(
                     onPressed: busy ? null : _submit,
                     child: busy
-                        ? const SizedBox(
-                            height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Update password'),
+                        ? const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                  height: 16,
+                                  width: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2)),
+                              SizedBox(width: 8),
+                              Text('Updating...'),
+                            ],
+                          )
+                        : const Text('Update Password'),
                   ),
                 ],
               ),

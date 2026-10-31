@@ -63,4 +63,25 @@ void main() {
       expect(const ProductFilters(categories: ['Silver']).isEmpty, isFalse);
     });
   });
+
+  group('web Shop parity', () {
+    test('sends subcategory and tags comma-joined', () {
+      final q = const ProductFilters(subcategories: ['Rings', 'Anklets'], tags: ['new'])
+          .toQuery(page: 1, limit: 12);
+      expect(q['subcategory'], 'Rings,Anklets');
+      expect(q['tags'], 'new');
+    });
+
+    test('"Featured" sorts as newest on the wire, as the web does', () {
+      expect(ProductSort.featured.wireValue, 'newest');
+      expect(ProductSort.featured.label, 'Featured');
+    });
+
+    test('category tree parses objects and tolerates bare strings', () {
+      final node = CategoryNode.fromJson({'name': 'Jewellery', 'subcategories': ['Rings']});
+      expect(node.name, 'Jewellery');
+      expect(node.subcategories, ['Rings']);
+      expect(CategoryNode.fromJson('Coins').name, 'Coins');
+    });
+  });
 }

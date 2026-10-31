@@ -22,6 +22,8 @@ class CartItem {
     this.variantWeight,
     this.variantLabel,
     this.imageData,
+    this.isGiftVoucher = false,
+    this.purity,
   });
 
   final String productId;
@@ -41,6 +43,12 @@ class CartItem {
   /// Base64 or URL, copied from the product so the cart renders offline.
   final String? imageData;
 
+  /// A gift voucher line: `productId` is the voucher id, priced by the server.
+  final bool isGiftVoucher;
+
+  /// Product purity ("925"), shown next to the weight as on the web cart.
+  final String? purity;
+
   double get lineTotal => unitPrice * quantity;
 
   /// Identity includes the variant: the same product in two sizes is two lines.
@@ -57,6 +65,8 @@ class CartItem {
         variantWeight: variantWeight,
         variantLabel: variantLabel,
         imageData: imageData,
+        isGiftVoucher: isGiftVoucher,
+        purity: purity,
       );
 
   factory CartItem.fromProduct(
@@ -77,6 +87,7 @@ class CartItem {
             : (product.weightInGrams > 0 ? '${product.weightInGrams} g' : null),
         variantLabel: variant?.label,
         imageData: product.primaryImage?.data,
+        purity: product.purity,
       );
 
   Map<String, dynamic> toJson() => {
@@ -89,6 +100,8 @@ class CartItem {
         if (variantWeight != null) 'variantWeight': variantWeight,
         if (variantLabel != null) 'variantLabel': variantLabel,
         if (imageData != null) 'imageData': imageData,
+        if (isGiftVoucher) 'isGiftVoucher': true,
+        if (purity != null) 'purity': purity,
       };
 
   factory CartItem.fromJson(Map<String, dynamic> json) => CartItem(
@@ -101,6 +114,8 @@ class CartItem {
         variantWeight: json['variantWeight'] as String?,
         variantLabel: json['variantLabel'] as String?,
         imageData: json['imageData'] as String?,
+        isGiftVoucher: json['isGiftVoucher'] == true,
+        purity: json['purity'] as String?,
       );
 
   /// Line shape accepted by `/payments/create-order` and `POST /orders`.
@@ -111,5 +126,6 @@ class CartItem {
         'product': productId,
         'quantity': quantity,
         if (variantWeight != null) 'variantWeight': variantWeight,
+        if (isGiftVoucher) ...{'isGiftVoucher': true, 'giftVoucherId': productId},
       };
 }

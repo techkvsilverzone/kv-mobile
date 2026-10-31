@@ -18,18 +18,41 @@ final goldRatesProvider = FutureProvider<List<MetalRate>>((ref) {
   return ref.watch(catalogRepositoryProvider).fetchGoldRates();
 });
 
+/// Rate history for one metal over the last `days` days (marquee trend, rate page chart).
+final rateHistoryProvider = FutureProvider.family<List<MetalRate>, (Metal, int)>((ref, key) {
+  return ref.watch(catalogRepositoryProvider).fetchRateHistory(key.$1, key.$2);
+});
+
 final gstPercentProvider = FutureProvider<double>((ref) {
   return ref.watch(catalogRepositoryProvider).fetchGstPercent();
 });
 
-final categoriesProvider = FutureProvider<List<String>>((ref) {
+final categoriesProvider = FutureProvider<List<CategoryNode>>((ref) {
   return ref.watch(catalogRepositoryProvider).fetchCategories();
+});
+
+final tagsProvider = FutureProvider<List<String>>((ref) {
+  return ref.watch(catalogRepositoryProvider).fetchTags();
 });
 
 /// Featured products for the home screen. The screen shows the first few.
 final featuredProductsProvider = FutureProvider<List<Product>>((ref) {
   return ref.watch(catalogRepositoryProvider).fetchFeatured();
 });
+
+/// `/offers` "Discounted Pieces": newest products that are on sale or carry an
+/// original price, first four (kv-ui Offers.tsx).
+final discountedProductsProvider = FutureProvider<List<Product>>((ref) async {
+  final all = await ref
+      .watch(catalogRepositoryProvider)
+      .fetchProducts(const ProductFilters(), page: 1, limit: 1000);
+  return all.where((p) => p.isSale || (p.originalPrice ?? 0) != 0).take(4).toList();
+});
+
+/// Products in one category ("Related Products" on the product page).
+final productsInCategoryProvider = FutureProvider.family<List<Product>, String>((ref, category) => ref
+    .watch(catalogRepositoryProvider)
+    .fetchProducts(ProductFilters(categories: [category]), page: 1, limit: 1000));
 
 final productProvider = FutureProvider.family<Product, String>((ref, id) {
   return ref.watch(catalogRepositoryProvider).fetchProduct(id);

@@ -9,15 +9,19 @@ import '../data/auth_repository.dart';
 /// "Invalid email or password" even for a network outage, which is worth
 /// improving on rather than porting.
 class AuthSubmission {
-  const AuthSubmission._({required this.ok, this.error, this.promoCoupon});
+  const AuthSubmission._({required this.ok, this.error, this.promoCoupon, this.statusCode});
 
   const AuthSubmission.success({String? promoCoupon})
       : this._(ok: true, promoCoupon: promoCoupon);
-  const AuthSubmission.failure(String message) : this._(ok: false, error: message);
+  const AuthSubmission.failure(String message, {int? statusCode})
+      : this._(ok: false, error: message, statusCode: statusCode);
 
   final bool ok;
   final String? error;
   final String? promoCoupon;
+
+  /// HTTP status of a server rejection (e.g. 404 "number not registered").
+  final int? statusCode;
 }
 
 /// Drives the auth forms. Holds only the in-flight flag; the resulting session
@@ -36,7 +40,13 @@ class AuthController extends StateNotifier<bool> {
     try {
       return await action();
     } on ApiException catch (e) {
-      return AuthSubmission.failure(e.message);
+      return AuthSubmission.failure(e.message,
+          statusCode: switch (e) {
+            ServerException(:final statusCode) => statusCode,
+            AuthException() => 401,
+            ValidationException() => 400,
+            _ => null,
+          });
     } catch (_) {
       return const AuthSubmission.failure('Something went wrong. Please try again.');
     } finally {
@@ -105,6 +115,13 @@ class AuthController extends StateNotifier<bool> {
   Future<AuthSubmission> forgotPassword(String email) {
     return _run(() async {
       await _repo.forgotPassword(email.trim());
+      return const AuthSubmission.success();
+    });
+  }
+
+  Future<AuthSubmission> resetPassword({required String email, required String code, required String newPassword}) {
+    return _run(() async {
+      await _repo.resetPassword(email: email.trim(), code: code.trim(), newPassword: newPassword);
       return const AuthSubmission.success();
     });
   }

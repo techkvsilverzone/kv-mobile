@@ -9,16 +9,23 @@ pure client of the existing `kv-api` backend — Phase 1 adds **no** new endpoin
 replacement for the Capacitor wrapper inside the `kv-silver-zone` web repo, which is retired once
 this ships.
 
-Sibling repos under `Source/` (independent git repos, no workspace tying them together):
-`kv-api` (Node/Express/MongoDB) and `kv-silver-zone` (React/Vite web). The parent `Source/CLAUDE.md`
-predates this repo and only documents those two.
+Sibling repos in the parent folder (independent git repos, no workspace tying them together):
+`kv-api` (Node/Express/PostgreSQL) and `kv-ui` (React/Vite web, formerly `kv-silver-zone`). The
+parent `CLAUDE.md` documents how the three fit together.
 
 The authoritative design and implementation context lives in:
 - [docs/superpowers/specs/2026-07-06-flutter-mobile-app-design.md](docs/superpowers/specs/2026-07-06-flutter-mobile-app-design.md) — Phase 1 scope, screens, data flow, error-handling contract
 - [docs/superpowers/plans/2026-07-06-foundation-and-core.md](docs/superpowers/plans/2026-07-06-foundation-and-core.md) — the core-layer plan that produced current `lib/core/`
 
-**Read the spec before adding a feature.** Explicitly out of Phase 1 scope: savings scheme, gift
-vouchers, wishlist, reviews, push notifications.
+**Parity requirement (2026-10-31):** the app must replicate every customer-facing feature and
+behaviour of `kv-ui` (admin excluded). The Phase 1 exclusions in the spec are lifted: savings
+scheme, gift vouchers, wishlist, reviews, returns, rate page, offers, info pages and guest browsing
+are now built. Port from the web page itself, not the spec. Don't copy web bugs that show customers
+wrong money (e.g. the web order page's hardcoded "GST 5%"); keep server figures. Push notifications
+are blocked on the backend (no push-token endpoint in `kv-api`).
+
+The price *estimate* must stay identical to `kv-ui/src/lib/pricing.ts` (owner's decision): do not
+apply the purity fraction from `docs/2026-07-22-react-parity-changes.md`.
 
 ## Commands
 
@@ -48,6 +55,11 @@ providers), `data/` (repository calling `core/api`), and must consume `core/` on
 providers and classes below. Built: `features/auth/`, `features/catalog/` (shop + product detail),
 `features/cart/`, `features/checkout/`, `features/orders/`. Not started: a real Home (category tiles
 and featured products) — `/home` is still a stub linking to `/shop`.
+
+**Guests can browse.** As on the web, only checkout, profile, orders, wishlist, dashboard, phone
+verification and passbooks need a session (`_requiresAuth` in `app_router.dart`); those redirect
+to `/login?from=<page>` and return there after sign-in. A guest cart stays on the phone and is
+copied to the server cart on sign-in.
 
 **Auth/session is the spine of the app.** The chain is:
 
@@ -103,9 +115,8 @@ The Phase 1 spec predates the code and gets some of this wrong. These were confi
 - **`PUT /users/me` is not symmetric with `GET`.** It returns the raw Mongoose document — it leaks
   `passwordHash` and omits the computed `role`. `AuthRepository.updateMe` discards that body and
   re-reads `GET /users/me`; don't "optimize" that second call away.
-- **`POST /auth/forgot-password` is a no-op stub.** It ignores the body, sends no mail, and always
-  returns 200. The OTP pair (`/auth/otp/request` + `/auth/otp/verify`) is fully implemented and is
-  the only working way for a locked-out user to get back in.
+- **Password reset:** `POST /auth/forgot-password` emails a 6-digit code; the app's reset screen
+  redeems it with `POST /auth/reset-password {email, code, newPassword}`.
 - **Address writes are strict where nothing else is:** `pincode` must match `^\d{6}$` and `phone`
   `^[6-9]\d{9}$` — no `+91`, no spaces. Run user input through `normalizePhone` before sending.
 - **The server owns default-address semantics** (first address forced default; setting a default
@@ -135,21 +146,32 @@ The Phase 1 spec predates the code and gets some of this wrong. These were confi
   from the most recent rate of any age. The app cannot block checkout; it compares its local
   estimate against the server breakdown and flags a difference instead.
 - **`POST /orders` trusts a client-sent `status`.** Never send one; omit it and get `Pending`.
-- **`totalWithTax` omits the discount** and `giftWrapFee` is never added to the total. Display
-  `grandTotal` (= `totalAmount`) as the amount charged.
+- **`totalWithTax` omits the discount.** Display `grandTotal` (= `totalAmount`) as the amount
+  charged. Gift wrap is server-priced (flat ₹99 after GST, `GIFT_WRAP_FEE` in kv-api
+  pricing.service.ts): send `giftWrap`/`giftMessage` to create-order and verify; the breakdown and
+  orders carry `giftWrapFee`.
+- **Pincode check is real:** `GET /delivery/check?pincode=` validates against India Post and returns
+  the zone's delivery fee; `verified: false` means the directory was unreachable.
+- **Notifications:** inbox at `GET /users/me/notifications` (+ `/:id/read`, `/read-all`); device
+  tokens at `POST`/`DELETE /users/me/push-tokens`. Server routes are storefront paths — map with
+  `appRouteFor`. FCM push needs `android/app/google-services.json` (the Gradle plugin is applied only
+  when it exists) plus a service account on the server (`FCM_SERVICE_ACCOUNT_FILE`).
 
 **Pricing is a deliberate port, kept in lockstep with two other implementations.**
 [lib/core/pricing/pricing.dart](lib/core/pricing/pricing.dart) mirrors
-`kv-silver-zone/src/lib/pricing.ts` function-for-function so app and website show identical prices.
+`kv-ui/src/lib/pricing.ts` function-for-function so app and website show identical prices.
 If you change pricing math here, the web (and its backend counterpart) must change identically, and
 the shared test fixtures must be updated in all of them. Money is `double` rupees, not paise.
 
 This is **display-only**. The server re-prices authoritatively at checkout; the app must never send
 a client-computed total as authoritative.
 
-**Theme** ([lib/core/theme/app_theme.dart](lib/core/theme/app_theme.dart)) hardcodes the web's
-default "Ocean Teal" palette as a Material 3 seed color. The web lets admins switch palettes at
-runtime; Phase 1 ships the default only.
+**Theme** ([lib/core/theme/app_theme.dart](lib/core/theme/app_theme.dart)) is a port of the web's
+CSS tokens (`kv-ui/src/index.css`), with the admin-chosen primary from `GET /store-config`
+(cached in SharedPreferences, applied in `main.dart`). Fonts are bundled Inter + Playfair Display.
+The marquee strip (`features/store_config/marquee_bar.dart`) sits above every screen via
+`MaterialApp.builder`; widget tests that pump the whole app must override
+`marqueeAnimatedProvider` to false (an endless scroll never settles) and use a taller test view.
 
 ## Conventions
 

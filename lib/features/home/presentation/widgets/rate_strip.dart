@@ -1,67 +1,87 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/format/currency.dart';
 import '../../../../core/pricing/pricing.dart';
 import '../../../catalog/application/catalog_providers.dart';
+import '../../../catalog/data/catalog_repository.dart';
+import '../../../rates/metal_key.dart';
 
-/// Today's silver and gold per-gram rates.
-///
-/// Hides entirely when neither metal has a rate for the day — which is the
-/// current state of the database, so this renders nothing rather than an empty
-/// shell. Matches the web widget's "hide when both rows are empty" behaviour,
-/// minus the trend arrows (the app has no rate-history need yet).
+/// kv-ui FloatingRateWidget: today's Silver / Gold 22K per-gram rate with a
+/// day-over-day trend arrow, linking to the rate page. Hidden when neither
+/// metal has a rate today.
 class RateStrip extends ConsumerWidget {
   const RateStrip({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final silver = ref.watch(silverRatesProvider).valueOrNull ?? const [];
-    final gold = ref.watch(goldRatesProvider).valueOrNull ?? const [];
-
-    final rows = <_RateRow>[
-      if (_rate(silver) != null) _RateRow(label: 'Silver', rate: _rate(silver)!),
-      if (_rate(gold) != null) _RateRow(label: 'Gold 22K', rate: _rate(gold)!),
+    List<MetalRate> v(AsyncValue<List<MetalRate>> a) => a.valueOrNull ?? const [];
+    final today = [...v(ref.watch(silverRatesProvider)), ...v(ref.watch(goldRatesProvider))];
+    final history = [
+      ...v(ref.watch(rateHistoryProvider((Metal.silver, 2)))),
+      ...v(ref.watch(rateHistoryProvider((Metal.gold, 2)))),
+    ];
+    final rows = [
+      for (final metal in MetalKey.values)
+        if (metal.top(today) case final current?) (metal, current, metal.change(today, history)),
     ];
     if (rows.isEmpty) return const SizedBox.shrink();
 
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.trending_up, size: 18, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 8),
-          Text("Today's rate", style: Theme.of(context).textTheme.labelLarge),
-          const Spacer(),
-          for (final row in rows) ...[
-            Text('${row.label} ',
-                style: Theme.of(context).textTheme.labelMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant)),
-            Text(formatRatePerGram(row.rate),
-                style: Theme.of(context).textTheme.labelLarge
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            if (row != rows.last) const SizedBox(width: 12),
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.push('/silver-rate'),
+        child: Column(
+          children: [
+            Container(
+              color: scheme.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  Text("TODAY'S RATE",
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(color: scheme.onPrimary, letterSpacing: 1.2)),
+                  const Spacer(),
+                  Icon(Icons.north_east, size: 14, color: scheme.onPrimary.withValues(alpha: 0.7)),
+                ],
+              ),
+            ),
+            for (final (metal, current, change) in rows)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: metal == MetalKey.silver
+                            ? const Color(0xFFCBD5E1)
+                            : const Color(0xFFFBBF24),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(metal.label, style: TextStyle(color: scheme.onSurfaceVariant)),
+                    const Spacer(),
+                    Text(formatRatePerGram(current.ratePerGram),
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 6),
+                    if (change > 0)
+                      const Icon(Icons.trending_up, size: 14, color: Color(0xFF16A34A))
+                    else if (change < 0)
+                      Icon(Icons.trending_down, size: 14, color: scheme.error)
+                    else
+                      Icon(Icons.remove, size: 14, color: scheme.onSurfaceVariant),
+                  ],
+                ),
+              ),
           ],
-        ],
+        ),
       ),
     );
   }
-
-  /// The highest-purity rate reads best as "today's rate"; fall back to the
-  /// first row otherwise.
-  double? _rate(List<MetalRate> rates) {
-    if (rates.isEmpty) return null;
-    return rates.first.ratePerGram;
-  }
-}
-
-class _RateRow {
-  const _RateRow({required this.label, required this.rate});
-  final String label;
-  final double rate;
 }

@@ -23,6 +23,13 @@ class PaymentVerificationException implements Exception {
   String toString() => message;
 }
 
+/// Gift wrap as checkout sends it. The server owns the fee.
+class GiftWrapChoice {
+  const GiftWrapChoice(this.message);
+  final String message;
+  Map<String, dynamic> toJson() => {'giftWrap': true, if (message.trim().isNotEmpty) 'giftMessage': message.trim()};
+}
+
 class CheckoutRepository {
   CheckoutRepository(this._api);
 
@@ -57,8 +64,10 @@ class CheckoutRepository {
     required List<CartItem> items,
     required Address address,
     String? couponCode,
+    GiftWrapChoice? giftWrap,
   }) async {
     final data = await _api.post('/payments/create-order', data: {
+      ...?giftWrap?.toJson(),
       'items': items.map((e) => e.toOrderLine()).toList(),
       if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
       'pincode': address.pincode,
@@ -78,6 +87,7 @@ class CheckoutRepository {
     required List<CartItem> items,
     required Address address,
     String? couponCode,
+    GiftWrapChoice? giftWrap,
   }) async {
     try {
       final data = await _api.post('/payments/verify', data: {
@@ -89,6 +99,7 @@ class CheckoutRepository {
           'shippingAddress': _addressPayload(address),
           'paymentMethod': 'razorpay',
           if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
+          ...?giftWrap?.toJson(),
         },
       });
 

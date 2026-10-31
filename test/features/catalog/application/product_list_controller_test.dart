@@ -38,7 +38,10 @@ class FakeCatalogRepository implements CatalogRepository {
   Future<List<Product>> fetchFeatured() async => const [];
 
   @override
-  Future<List<String>> fetchCategories() async => const [];
+  Future<List<CategoryNode>> fetchCategories() async => const [];
+
+  @override
+  Future<List<String>> fetchTags() async => const [];
 
   @override
   Future<List<MetalRate>> fetchGoldRates() async => const [];
@@ -48,6 +51,9 @@ class FakeCatalogRepository implements CatalogRepository {
 
   @override
   Future<double> fetchGstPercent() async => 3;
+
+  @override
+  Future<List<MetalRate>> fetchRateHistory(Metal metal, int days) async => const [];
 }
 
 /// A full page, so the controller believes more may follow.

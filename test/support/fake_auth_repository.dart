@@ -105,7 +105,19 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> forgotPassword(String email) async {}
+  Future<void> forgotPassword(String email) async {
+    forgotPasswordCalls.add(email);
+  }
+
+  final forgotPasswordCalls = <String>[];
+  final resetPasswordCalls = <(String, String, String)>[];
+  ApiException? resetPasswordError;
+
+  @override
+  Future<void> resetPassword({required String email, required String code, required String newPassword}) async {
+    resetPasswordCalls.add((email, code, newPassword));
+    if (resetPasswordError != null) throw resetPasswordError!;
+  }
 
   @override
   Future<User> updateMe(Map<String, dynamic> changes) async {

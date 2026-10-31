@@ -36,6 +36,7 @@ class BreakdownTable extends StatelessWidget {
               formatInr(breakdown.taxAmount),
             ),
             _row(context, 'Delivery', formatInr(breakdown.deliveryFee)),
+            if (breakdown.giftWrapFee > 0) _row(context, 'Gift Wrapping', formatInr(breakdown.giftWrapFee)),
             const Divider(height: 20),
             _row(context, 'Total', formatInr(breakdown.grandTotal), bold: true),
             if (breakdown.deliveryFee == 0) ...[

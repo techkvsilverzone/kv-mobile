@@ -15,6 +15,7 @@ class CheckoutBreakdown {
     required this.gstPercent,
     required this.taxAmount,
     required this.deliveryFee,
+    this.giftWrapFee = 0,
     required this.grandTotal,
     this.couponCode,
     this.deliveryZone,
@@ -26,6 +27,7 @@ class CheckoutBreakdown {
   final double gstPercent;
   final double taxAmount;
   final double deliveryFee;
+  final double giftWrapFee;
 
   /// The amount actually charged. Note the server also returns `totalWithTax`,
   /// which does **not** subtract the discount — do not display that one.
@@ -41,6 +43,7 @@ class CheckoutBreakdown {
         gstPercent: _d(json['gstPercent']),
         taxAmount: _d(json['taxAmount']),
         deliveryFee: _d(json['deliveryFee']),
+        giftWrapFee: _d(json['giftWrapFee']),
         grandTotal: _d(json['grandTotal']),
         couponCode: json['couponCode'] as String?,
         deliveryZone: json['deliveryZone'] as String?,

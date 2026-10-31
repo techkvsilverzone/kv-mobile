@@ -7,6 +7,7 @@ import 'package:kv_silver_mobile/core/router/app_router.dart';
 import 'package:kv_silver_mobile/core/storage/secure_token_storage.dart';
 import 'package:kv_silver_mobile/features/auth/data/auth_repository.dart';
 import 'package:kv_silver_mobile/main.dart';
+import 'package:kv_silver_mobile/features/store_config/marquee_bar.dart';
 import '../../../support/fake_auth_repository.dart';
 import '../../../support/fake_secure_storage_client.dart';
 
@@ -22,14 +23,22 @@ void main() {
   Future<ProviderContainer> pumpApp(WidgetTester tester) async {
     final container = ProviderContainer(
       overrides: [
+        marqueeAnimatedProvider.overrideWithValue(false),
         secureTokenStorageProvider.overrideWithValue(storage),
         authRepositoryProvider.overrideWithValue(repo),
       ],
     );
     addTearDown(container.dispose);
+    // Room for the marquee strip above every screen.
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: const KvSilverMobileApp()),
     );
+    await tester.pumpAndSettle();
+    // Guests land on home; these flows start from the login screen.
+    container.read(appRouterProvider).go('/login');
     await tester.pumpAndSettle();
     return container;
   }
@@ -43,13 +52,13 @@ void main() {
   Future<void> signUp(WidgetTester tester) async {
     await tester.tap(find.widgetWithText(TextButton, 'Sign up'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextFormField, 'Full name'), 'Vino');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Email address'), 'vino@example.com');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Mobile number'), '8190858375');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Full Name'), 'Vino');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Email Address'), 'vino@example.com');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Mobile Number'), '8190858375');
     await tester.enterText(find.widgetWithText(TextFormField, 'Password'), 'secret1');
-    await tester.enterText(find.widgetWithText(TextFormField, 'Confirm password'), 'secret1');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Confirm Password'), 'secret1');
     await tapVisible(tester, find.byType(CheckboxListTile));
-    await tapVisible(tester, find.widgetWithText(FilledButton, 'Create account'));
+    await tapVisible(tester, find.widgetWithText(FilledButton, 'Create Account'));
   }
 
   testWidgets('signup lands on verification without re-sending the code, and a code verifies', (tester) async {
@@ -64,7 +73,7 @@ void main() {
     await tapVisible(tester, find.widgetWithText(FilledButton, 'Verify'));
 
     expect(repo.lastPhoneCode, '482913');
-    expect(find.text('Welcome, Vino'), findsOneWidget);
+    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
   });
 
   testWidgets('verification can be skipped', (tester) async {
@@ -73,7 +82,7 @@ void main() {
 
     await tapVisible(tester, find.widgetWithText(TextButton, 'Skip for now'));
 
-    expect(find.text('Welcome, Vino'), findsOneWidget);
+    expect(find.text('KV SILVER ZONE EXCLUSIVE'), findsOneWidget);
   });
 
   testWidgets('Profile offers verification for an unverified number and shows a wrong-code error',

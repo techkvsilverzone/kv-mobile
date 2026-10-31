@@ -3,26 +3,31 @@ import '../../../core/api/api_client.dart';
 import '../../../core/pricing/pricing.dart';
 import 'models/product.dart';
 
-enum ProductSort { newest, priceAsc, priceDesc }
+/// The web's sort options. `featured` has no server order of its own — the web
+/// sends `newest` for it (Shop.tsx), so it does too.
+enum ProductSort { featured, newest, priceAsc, priceDesc }
 
 extension ProductSortWire on ProductSort {
   /// Wire values the server accepts. Note the param is `sortBy`, not `sort`.
   String get wireValue => switch (this) {
-        ProductSort.newest => 'newest',
+        ProductSort.featured || ProductSort.newest => 'newest',
         ProductSort.priceAsc => 'price_asc',
         ProductSort.priceDesc => 'price_desc',
       };
 
   String get label => switch (this) {
+        ProductSort.featured => 'Featured',
         ProductSort.newest => 'Newest',
-        ProductSort.priceAsc => 'Price: low to high',
-        ProductSort.priceDesc => 'Price: high to low',
+        ProductSort.priceAsc => 'Price: Low to High',
+        ProductSort.priceDesc => 'Price: High to Low',
       };
 }
 
 class ProductFilters {
   const ProductFilters({
     this.categories = const [],
+    this.subcategories = const [],
+    this.tags = const [],
     this.metals = const [],
     this.minPrice,
     this.maxPrice,
@@ -30,8 +35,10 @@ class ProductFilters {
     this.sort = ProductSort.newest,
   });
 
-  /// Matched against the product's `material` field server-side.
+  /// Matched against the product's `category` field server-side.
   final List<String> categories;
+  final List<String> subcategories;
+  final List<String> tags;
 
   /// Confusingly, `metal` filters on **purity**, not on a metal name.
   final List<String> metals;
@@ -42,6 +49,8 @@ class ProductFilters {
 
   bool get isEmpty =>
       categories.isEmpty &&
+      subcategories.isEmpty &&
+      tags.isEmpty &&
       metals.isEmpty &&
       minPrice == null &&
       maxPrice == null &&
@@ -59,6 +68,8 @@ class ProductFilters {
   }) =>
       ProductFilters(
         categories: categories ?? this.categories,
+        subcategories: subcategories,
+        tags: tags,
         metals: metals ?? this.metals,
         minPrice: clearPrice ? null : (minPrice ?? this.minPrice),
         maxPrice: clearPrice ? null : (maxPrice ?? this.maxPrice),
@@ -69,6 +80,8 @@ class ProductFilters {
   /// Multi-select values are comma-joined into a single param, as on web.
   Map<String, dynamic> toQuery({required int page, required int limit}) => {
         if (categories.isNotEmpty) 'category': categories.join(','),
+        if (subcategories.isNotEmpty) 'subcategory': subcategories.join(','),
+        if (tags.isNotEmpty) 'tags': tags.join(','),
         if (metals.isNotEmpty) 'metal': metals.join(','),
         if (minPrice != null) 'minPrice': minPrice,
         if (maxPrice != null) 'maxPrice': maxPrice,
@@ -83,6 +96,30 @@ class ProductFilters {
 /// `/silver-rates/today` are bare arrays, `/products/:id` is a bare object, and
 /// `/products/categories` and `/pricing-config` use a `{status, data}` envelope.
 /// There is no consistent wrapper to factor out.
+enum Metal {
+  silver('silver-rates'),
+  gold('gold-rates');
+
+  const Metal(this.path);
+  final String path;
+}
+
+/// A top-level category and its subcategories (kv-ui `CategoryNode`).
+class CategoryNode {
+  const CategoryNode(this.name, [this.subcategories = const []]);
+
+  /// Tolerates the old flat string list too.
+  factory CategoryNode.fromJson(dynamic e) => e is Map
+      ? CategoryNode(
+          (e['name'] ?? '').toString(),
+          [for (final s in (e['subcategories'] as List? ?? const [])) s.toString()],
+        )
+      : CategoryNode(e.toString());
+
+  final String name;
+  final List<String> subcategories;
+}
+
 class CatalogRepository {
   CatalogRepository(this._api);
 
@@ -118,8 +155,17 @@ class CatalogRepository {
         .toList(growable: false);
   }
 
-  Future<List<String>> fetchCategories() async {
+  /// `{status, data: [{name, subcategories}]}` — a two-level tree.
+  Future<List<CategoryNode>> fetchCategories() async {
     final data = await _api.get('/products/categories');
+    final list = data is Map ? data['data'] : data;
+    if (list is! List) return const [];
+    return list.map(CategoryNode.fromJson).toList(growable: false);
+  }
+
+  /// Tags in use across active products, `{status, data: [String]}`.
+  Future<List<String>> fetchTags() async {
+    final data = await _api.get('/products/tags');
     final list = data is Map ? data['data'] : data;
     if (list is! List) return const [];
     return list.map((e) => e.toString()).toList(growable: false);
@@ -128,26 +174,18 @@ class CatalogRepository {
   /// Silver rates drive product pricing. The response is a bare array whose
   /// elements key the day as `rateDate` (gold sends both `date` and `rateDate`,
   /// silver only `rateDate`), and the id as `id` rather than `_id`.
-  Future<List<MetalRate>> fetchSilverRates() async {
-    final data = await _api.get('/silver-rates/today');
-    if (data is! List) return const [];
-    return data.whereType<Map>().map((raw) {
-      final e = raw.cast<String, dynamic>();
-      return MetalRate(
-        id: (e['id'] ?? e['_id'] ?? '').toString(),
-        date: (e['rateDate'] ?? e['date'] ?? e['createdAt'] ?? '').toString(),
-        ratePerGram: _toDouble(e['ratePerGram']) ?? 0,
-        ratePerKg: _toDouble(e['ratePerKg']) ?? 0,
-        purity: (e['purity'] ?? '').toString(),
-        updatedBy: e['updatedBy'] as String?,
-      );
-    }).toList(growable: false);
-  }
+  Future<List<MetalRate>> fetchSilverRates() async =>
+      _parseRates(await _api.get('/silver-rates/today'));
 
-  /// Today's gold rate, for the home rate strip. Same bare-array shape as
-  /// silver; gold rows carry both `date` and `rateDate`.
-  Future<List<MetalRate>> fetchGoldRates() async {
-    final data = await _api.get('/gold-rates/today');
+  /// Today's gold rate. Same bare-array shape as silver.
+  Future<List<MetalRate>> fetchGoldRates() async =>
+      _parseRates(await _api.get('/gold-rates/today'));
+
+  /// `GET /{silver|gold}-rates/history?days=n`, same shape as today's rates.
+  Future<List<MetalRate>> fetchRateHistory(Metal metal, int days) async =>
+      _parseRates(await _api.get('/${metal.path}/history', query: {'days': days}));
+
+  List<MetalRate> _parseRates(dynamic data) {
     if (data is! List) return const [];
     return data.whereType<Map>().map((raw) {
       final e = raw.cast<String, dynamic>();

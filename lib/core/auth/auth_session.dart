@@ -110,8 +110,19 @@ class AuthSessionController extends StateNotifier<AuthSessionState> {
     state = const AuthSessionState(user: null, isRestoring: false);
   }
 
+  final _signOutHooks = <Future<void> Function()>[];
+
+  /// Work that needs the session still valid, run just before a user sign-out
+  /// (e.g. unregistering this device from push).
+  void addSignOutHook(Future<void> Function() hook) => _signOutHooks.add(hook);
+
   /// User-initiated sign out: tell the server, then clear locally regardless.
   Future<void> signOut() async {
+    for (final hook in _signOutHooks) {
+      try {
+        await hook();
+      } catch (_) {/* never block sign-out */}
+    }
     await _repo.logout();
     await clearSession();
   }

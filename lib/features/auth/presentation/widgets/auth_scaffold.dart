@@ -32,13 +32,20 @@ class AuthScaffold extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('KV Silver Zone',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(color: theme.colorScheme.primary, letterSpacing: 1.5)),
-                  const SizedBox(height: 24),
+                  // The web's round "KV" mark.
+                  Center(
+                    child: CircleAvatar(
+                      radius: 32,
+                      backgroundColor: theme.colorScheme.primary,
+                      child: Text('KV',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                              color: theme.colorScheme.onPrimary, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   Text(title,
-                      textAlign: TextAlign.center, style: theme.textTheme.headlineSmall),
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)),
                   if (subtitle != null) ...[
                     const SizedBox(height: 8),
                     Text(subtitle!,

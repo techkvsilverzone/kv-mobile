@@ -20,6 +20,13 @@ extension OrderStatusLabel on OrderStatus {
         OrderStatus.unknown => 'Unknown',
       };
 
+  /// The status as the server spells it ("Pending"), which the web shows raw.
+  String get wireName => switch (this) {
+        OrderStatus.pending => 'Pending',
+        OrderStatus.unknown => 'Unknown',
+        _ => label,
+      };
+
   /// Position in the fulfilment timeline; -1 for states outside it.
   int get stepIndex => switch (this) {
         OrderStatus.pending => 0,
@@ -37,13 +44,19 @@ class OrderItem {
     required this.unitPrice,
     required this.totalPrice,
     this.weight,
+    this.productId = '',
+    this.image,
   });
 
+  final String productId;
   final String productName;
   final int quantity;
   final double unitPrice;
   final double totalPrice;
   final double? weight;
+
+  /// Base64 or URL snapshot of the product image, when the server kept one.
+  final String? image;
 
   factory OrderItem.fromJson(Map<String, dynamic> json) => OrderItem(
         productName: (json['productName'] ?? '') as String,
@@ -51,6 +64,8 @@ class OrderItem {
         unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0,
         totalPrice: (json['totalPrice'] as num?)?.toDouble() ?? 0,
         weight: (json['weight'] as num?)?.toDouble(),
+        productId: (json['productId'] ?? json['product'] ?? '').toString(),
+        image: (json['image'] as String?)?.isNotEmpty == true ? json['image'] as String : null,
       );
 }
 
@@ -101,6 +116,11 @@ class Order {
     this.couponCode,
     this.address,
     this.deliveredAt,
+    this.isInStore = false,
+    this.giftWrapFee = 0,
+    this.giftMessage,
+    this.saleLocation,
+    this.soldByName,
   });
 
   final String id;
@@ -115,6 +135,8 @@ class Order {
   final double taxAmount;
   final double deliveryFee;
   final double couponDiscount;
+  final double giftWrapFee;
+  final String? giftMessage;
 
   /// The amount actually charged. Prefer this over the server's `totalWithTax`,
   /// which omits the discount and therefore disagrees whenever a coupon applied.
@@ -125,6 +147,11 @@ class Order {
   final OrderAddress? address;
   final DateTime? createdAt;
   final DateTime? deliveredAt;
+
+  /// `channel == 'OFFLINE'`: billed in-store or at a stall from the admin panel.
+  final bool isInStore;
+  final String? saleLocation;
+  final String? soldByName;
 
   String get shortId => id.length <= 6 ? id : id.substring(id.length - 6);
 
@@ -153,12 +180,17 @@ class Order {
       taxAmount: _d(json['taxAmount']),
       deliveryFee: _d(json['deliveryFee']),
       couponDiscount: _d(json['couponDiscount']),
+      giftWrapFee: _d(json['giftWrapFee']),
+      giftMessage: (json['giftMessage'] as String?)?.isEmpty ?? true ? null : json['giftMessage'] as String,
       grandTotal: _d(json['grandTotal'] ?? json['totalAmount']),
       couponCode: json['couponCode'] as String?,
       items: items,
       address: address is Map ? OrderAddress.fromJson(address.cast<String, dynamic>()) : null,
       createdAt: _date(json['createdAt']),
       deliveredAt: _date(json['deliveredAt']),
+      isInStore: json['channel'] == 'OFFLINE',
+      saleLocation: json['saleLocation'] as String?,
+      soldByName: (json['soldBy'] is Map) ? (json['soldBy'] as Map)['name'] as String? : null,
     );
   }
 

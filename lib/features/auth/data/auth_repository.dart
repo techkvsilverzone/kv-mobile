@@ -59,12 +59,15 @@ class AuthRepository {
     return User.fromJson(((data as Map)['user'] as Map).cast<String, dynamic>());
   }
 
-  /// NOTE: `/auth/forgot-password` is currently a no-op stub server-side — it
-  /// ignores the body and always 200s without sending mail. Kept so the flow
-  /// exists and starts working the moment the endpoint is implemented; the UI
-  /// must not promise more than this delivers.
+  /// Emails a 6-digit reset code. The reply is generic whether or not the
+  /// address has an account.
   Future<void> forgotPassword(String email) async {
     await _api.post('/auth/forgot-password', data: {'email': email});
+  }
+
+  /// Redeems the emailed code (`POST /auth/reset-password`).
+  Future<void> resetPassword({required String email, required String code, required String newPassword}) async {
+    await _api.post('/auth/reset-password', data: {'email': email, 'code': code, 'newPassword': newPassword});
   }
 
   Future<User> getMe() async {

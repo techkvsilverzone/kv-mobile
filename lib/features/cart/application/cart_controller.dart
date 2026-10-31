@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../catalog/data/models/product.dart';
+import '../../../core/auth/auth_session.dart';
 import '../data/cart_repository.dart';
 import '../data/models/cart_item.dart';
 
@@ -13,9 +14,21 @@ const _cartStorageKey = 'kv_silver_mobile.cart';
 /// a selected variant (see [CartItem]). Server writes are fire-and-forget: a
 /// failed sync must never block adding to the cart or lose the local line.
 class CartController extends StateNotifier<List<CartItem>> {
-  CartController(this._repo) : super(const []);
+  CartController(this._repo, {bool Function()? isAuthenticated})
+      : _isAuthenticated = isAuthenticated ?? (() => true),
+        super(const []);
 
   final CartRepository _repo;
+
+  /// A guest's cart lives on the phone only; the server cart needs a session.
+  final bool Function() _isAuthenticated;
+
+  /// On sign-in, copy the guest cart to the server cart (the web merges it too).
+  void syncAll() {
+    for (final id in state.map((e) => e.productId).toSet()) {
+      _syncProduct(id);
+    }
+  }
   SharedPreferences? _prefs;
 
   Future<void> load() async {
@@ -47,6 +60,8 @@ class CartController extends StateNotifier<List<CartItem>> {
   /// The server keys lines by product alone, so variants of one product are
   /// collapsed into a single summed quantity before syncing.
   void _syncProduct(String productId) {
+    if (!_isAuthenticated()) return;
+    if (state.any((e) => e.productId == productId && e.isGiftVoucher)) return;
     final total = state
         .where((e) => e.productId == productId)
         .fold<int>(0, (sum, e) => sum + e.quantity);
@@ -87,6 +102,22 @@ class CartController extends StateNotifier<List<CartItem>> {
 
     _persist();
     _syncProduct(product.id);
+  }
+
+  /// A gift voucher at its listed price (GST inclusive). Vouchers are not
+  /// server-cart products, so they are never synced there.
+  void addVoucher({required String id, required String name, required double price}) {
+    final i = state.indexWhere((e) => e.isGiftVoucher && e.productId == id);
+    if (i >= 0) {
+      state = [for (final (j, e) in state.indexed) j == i ? e.copyWith(quantity: e.quantity + 1) : e];
+    } else {
+      state = [
+        ...state,
+        CartItem(
+            productId: id, name: name, unitPrice: price, quantity: 1, inStock: true, stockAvailable: 0, isGiftVoucher: true),
+      ];
+    }
+    _persist();
   }
 
   void setQuantity(String lineKey, int quantity) {
@@ -146,7 +177,12 @@ class CartController extends StateNotifier<List<CartItem>> {
 }
 
 final cartProvider = StateNotifierProvider<CartController, List<CartItem>>((ref) {
-  return CartController(ref.watch(cartRepositoryProvider));
+  final controller = CartController(ref.watch(cartRepositoryProvider),
+      isAuthenticated: () => ref.read(authSessionProvider).isAuthenticated);
+  ref.listen<AuthSessionState>(authSessionProvider, (prev, next) {
+    if (next.isAuthenticated && !(prev?.isAuthenticated ?? false)) controller.syncAll();
+  });
+  return controller;
 });
 
 /// Total unit count, for the app-bar badge.
