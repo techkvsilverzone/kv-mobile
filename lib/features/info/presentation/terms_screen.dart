@@ -92,6 +92,8 @@ class TermsScreen extends StatelessWidget {
               'applicable bonus installment.'),
           LegalText("KV Silver Zone reserves the right to modify scheme terms with 30 days' notice. "
               'Premature withdrawal may result in forfeiture of bonus benefits.'),
+          LegalText("KV Smart Purchase Plan (flexible): every payment earns interest as extra silver. The rate depends on the scheme month the payment is made in, counted from the enrolment date: month 1: 7%, month 2: 7%, month 3: 6%, month 4: 6%, month 5: 5%, month 6: 4%, month 7: 4%, month 8: 3%, month 9: 3%, month 10: 2%, month 11: 1%."),
+          LegalText("The interest is calculated on the silver that payment buys at that day's rate. For example, ₹1,000 paid in month 1 at ₹200/g buys 5 g and earns 7% = 0.35 g. Interest is shown in the passbook as it accrues and is paid out only when the scheme completes its 11 months; it is forfeited if the scheme is closed before then."),
         ]),
         const LegalSection(title: '7. Intellectual Property', children: [
           LegalText('All content on this website — including text, images, logos, and product designs — '

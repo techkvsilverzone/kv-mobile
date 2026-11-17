@@ -78,6 +78,7 @@ SchemePlan samplePlan(int i) => SchemePlan.fromJson({
       'paymentMode': i == 2 ? 'FLEXIBLE' : 'FIXED',
       'monthlyAmounts': [1000, 2000, 5000],
       'minPaymentAmount': 500,
+      if (i % 3 == 2) 'monthlyInterestPercent': [7, 7, 6, 6, 5, 4, 4, 3, 3, 2, 1],
     });
 
 SavingsEnrollment sampleScheme() => SavingsEnrollment.fromJson({

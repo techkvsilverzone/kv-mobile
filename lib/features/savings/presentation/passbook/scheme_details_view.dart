@@ -172,6 +172,15 @@ class _SchemeDetailsViewState extends State<SchemeDetailsView> {
             for (final (i, r) in rows.indexed) ...[if (i > 0) const Divider(indent: 64), r],
           ]),
         ),
+      if (flexible && s.installments.any((i) => i.payment.amount > 0 && i.payment.devidentAmount > 0))
+        const Padding(
+          padding: EdgeInsets.fromLTRB(4, 10, 4, 0),
+          child: Text(
+            'Totals include the monthly interest. Interest is paid when the plan completes its 11 months '
+            'and is forfeited if it is closed early.',
+            style: TextStyle(fontSize: 12.5, color: Kv.muted, height: 1.4),
+          ),
+        ),
     ]);
 
     // The receipt is painted underneath the (opaque) content so it can be rasterised unseen.
@@ -220,6 +229,8 @@ class _SchemeDetailsViewState extends State<SchemeDetailsView> {
           if (hasGrams) _grams(inst.grams),
           if (hasGrams && widget.flexible && runningGrams != null) 'total ${_grams(runningGrams)}',
         ],
+        if (!isBonus && p.devidentAmount > 0 && p.amount > 0)
+          ['incl. ${(p.devidentAmount / p.amount * 100).round()}% interest ${_grams(p.devidentMaterialWeight)}'],
         [if (p.id != null) 'Receipt ${p.id}'],
       ],
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [

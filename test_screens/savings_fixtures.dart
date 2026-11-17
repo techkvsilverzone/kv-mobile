@@ -37,11 +37,14 @@ SavingsEnrollment smartScheme() => SavingsEnrollment.fromJson({
       'planName': 'KV Smart Purchase Plan', 'monthlyAmount': 500, 'duration': 11, 'startDate': '2026-07-12',
       'status': 'Active', 'totalPaid': 4750, 'bonusAmount': 0, 'maturityDate': '2027-06-12T00:00:00Z',
       'payments': [
-        for (final (i, (amt, date, rate)) in const [
-          (1500, '2026-07-12', 101.5), (750, '2026-08-03', 104.0), (2000, '2026-09-18', 107.2), (500, '2026-10-21', 111.4),
+        // (amount, date, rate, interest %) — scheme months 1, 1, 3, 4 from the 12 Jul start.
+        for (final (i, (amt, date, rate, pct)) in const [
+          (1500, '2026-07-12', 101.5, 7), (750, '2026-08-03', 104.0, 7), (2000, '2026-09-18', 107.2, 6), (500, '2026-10-21', 111.4, 6),
         ].indexed)
           {'id': 'R-30${i + 1}', 'month': 0, 'amount': amt, 'paidAt': '${date}T09:00:00Z', 'materialRate': rate,
-            'materialWeight': double.parse((amt / rate).toStringAsFixed(3)), 'method': i == 1 ? 'CASH' : 'ONLINE'},
+            'materialWeight': double.parse((amt / rate).toStringAsFixed(3)), 'method': i == 1 ? 'CASH' : 'ONLINE',
+            'devidentAmount': amt * pct / 100, 'devidentMaterialRate': rate,
+            'devidentMaterialWeight': double.parse((amt * pct / 100 / rate).toStringAsFixed(3))},
       ],
     });
 

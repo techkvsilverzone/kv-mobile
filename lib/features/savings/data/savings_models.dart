@@ -49,6 +49,7 @@ class SchemePlan {
     required this.monthlyAmounts,
     this.minPaymentAmount,
     this.hamper,
+    this.monthlyInterestPercent = const [],
   });
 
   final String id;
@@ -67,6 +68,9 @@ class SchemePlan {
   final double? minPaymentAmount;
   final SchemeHamper? hamper;
 
+  /// FLEXIBLE plans: interest % (extra metal) for a payment made in scheme month 1, 2, …
+  final List<double> monthlyInterestPercent;
+
   factory SchemePlan.fromJson(Map<String, dynamic> j) => SchemePlan(
         id: (j['_id'] ?? j['id'] ?? '').toString(),
         type: (j['type'] ?? '').toString(),
@@ -81,6 +85,9 @@ class SchemePlan {
             : const [],
         minPaymentAmount: _dn(j['minPaymentAmount']),
         hamper: j['hamper'] is Map ? SchemeHamper.fromJson(_m(j['hamper'])) : null,
+        monthlyInterestPercent: j['monthlyInterestPercent'] is List
+            ? (j['monthlyInterestPercent'] as List).map(_d).toList()
+            : const [],
       );
 }
 

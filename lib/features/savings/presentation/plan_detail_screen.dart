@@ -176,6 +176,33 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen> {
               ),
             ]),
           ),
+          if (plan.monthlyInterestPercent.isNotEmpty) ...[
+            const SizedBox(height: Kv.gap),
+            const _Title('Interest by month'),
+            KvCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (var i = 0; i < plan.monthlyInterestPercent.length; i++)
+                    Container(
+                      width: 52,
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      decoration: BoxDecoration(color: Kv.bg, borderRadius: Kv.smallRadius),
+                      child: Column(children: [
+                        Text('M${i + 1}', style: const TextStyle(fontSize: 11, color: Kv.muted)),
+                        Text('${_num(plan.monthlyInterestPercent[i])}%',
+                            style: const TextStyle(fontWeight: FontWeight.w700, color: Kv.success)),
+                      ]),
+                    ),
+                ]),
+                const SizedBox(height: 10),
+                const Text(
+                  'Each payment earns the % of the month you pay in, as extra silver. '
+                  'Interest is paid when you complete the plan; it is forfeited if you close early.',
+                  style: TextStyle(fontSize: 13, color: Kv.muted, height: 1.4),
+                ),
+              ]),
+            ),
+          ],
         ] else ...[
           const _Title('Monthly amount'),
           Wrap(spacing: 8, runSpacing: 8, children: [
