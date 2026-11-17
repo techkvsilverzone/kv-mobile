@@ -76,12 +76,12 @@ void main() {
         ),
         rates,
       );
-      // Server formula: weight × rate × purity (925 → 0.925).
+      // weight × rate (no purity factor) + making + wastage.
       expect(result.computed, isTrue);
-      expect(result.metalValue, 832.5);
-      expect(result.makingCharge, 99.9);
+      expect(result.metalValue, 900);
+      expect(result.makingCharge, 108);
       expect(result.wastage, 100);
-      expect(result.preGstPrice, 1032.4);
+      expect(result.preGstPrice, 1108);
     });
 
     test('uses a gram override (selected variant weight) over the product weight', () {
@@ -98,7 +98,7 @@ void main() {
         gramsOverride: 20,
       );
       expect(result.grams, 20);
-      expect(result.preGstPrice, 1665); // 20 × 90 × 0.925
+      expect(result.preGstPrice, 1800); // 20 × 90
     });
 
     test('keeps the listed price for a legacy product with rate + weight but no charges configured', () {
@@ -214,11 +214,12 @@ void main() {
         );
     final at100 = [_rate(purity: '925', ratePerGram: 100)];
 
-    test('live = weight × rate × purity + making %', () {
-      expect(computeProductPricing(p(percent: 10), at100).preGstPrice, 1017.5);
+    test('live = weight × rate + making % (owner: 16.8 g at ₹190 is ₹3,192)', () {
+      expect(computeProductPricing(p(percent: 10), at100).preGstPrice, 1100);
+      expect(computeProductPricing(p(grams: 16.8, percent: 0, serverRate: 190), const []).preGstPrice, 3192);
     });
     test('making per gram', () {
-      expect(computeProductPricing(p(perGram: 50), at100).preGstPrice, 1425);
+      expect(computeProductPricing(p(perGram: 50), at100).preGstPrice, 1500);
     });
     test('no charge at all → listed price (Wooden Aarathi)', () {
       final r = computeProductPricing(p(grams: 4.2, purity: '999', serverRate: 230), const []);
@@ -228,17 +229,11 @@ void main() {
     test('an explicit 0 legacy charge still prices live, with the server rate and rounding', () {
       final r = computeProductPricing(p(grams: 4.2, purity: '999', flat: 0, serverRate: 230), const []);
       expect(r.computed, isTrue);
-      expect(r.preGstPrice, 965.03);
+      expect(r.preGstPrice, 966);
     });
     test('the server rate wins over today\'s rates; fixed price ignores both', () {
-      expect(computeProductPricing(p(percent: 0, serverRate: 200), at100).preGstPrice, 1850);
+      expect(computeProductPricing(p(percent: 0, serverRate: 200), at100).preGstPrice, 2000);
       expect(computeProductPricing(p(fixed: true, percent: 10), at100).preGstPrice, 650);
-    });
-    test('purity defaults: silver 0.925, other materials 1', () {
-      expect(resolvePurityFraction(null, 'Silver'), 0.925);
-      expect(resolvePurityFraction('', 'Wood'), 1);
-      expect(resolvePurityFraction('92.5', null), 0.925);
-      expect(resolvePurityFraction('999', null), 0.999);
     });
   });
 }

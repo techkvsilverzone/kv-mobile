@@ -97,7 +97,6 @@ class Product {
     this.makingChargePercent,
     this.makingChargePerGram,
     this.serverRatePerGram,
-    this.serverPurityFraction,
   });
 
   /// `_id` — products expose no `id` alias, unlike addresses and metal rates.
@@ -139,7 +138,6 @@ class Product {
   final double? makingChargePercent;
   final double? makingChargePerGram;
   final double? serverRatePerGram;
-  final double? serverPurityFraction;
 
   final List<ProductImage> images;
   final List<ProductVariant> variants;
@@ -186,7 +184,6 @@ class Product {
       makingChargePercent: _toDouble(json['makingChargePercent']),
       makingChargePerGram: _toDouble(json['makingChargePerGram']),
       serverRatePerGram: json['pricing'] is Map ? _toDouble((json['pricing'] as Map)['ratePerGram']) : null,
-      serverPurityFraction: json['pricing'] is Map ? _toDouble((json['pricing'] as Map)['purityFraction']) : null,
       images: images,
       variants: variants,
       stockAvailable: (json['stockAvailable'] as num?)?.toInt() ?? 0,
@@ -209,7 +206,6 @@ class Product {
         makingChargePercent: makingChargePercent,
         makingChargePerGram: makingChargePerGram,
         serverRatePerGram: serverRatePerGram,
-        serverPurityFraction: serverPurityFraction,
       );
 
   static double? _toDouble(dynamic v) {

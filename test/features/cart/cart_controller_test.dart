@@ -180,11 +180,11 @@ void main() {
     final fresh = Product.fromJson({
       '_id': 'p9', 'name': 'Bell', 'weight': 10, 'price': 1017.5, 'listedPrice': 1350, 'isFixedPrice': false,
       'purity': '925', 'makingChargePercent': 10, 'inStock': true, 'stockAvailable': 2,
-      'pricing': {'ratePerGram': 100, 'purityFraction': 0.925},
+      'pricing': {'ratePerGram': 100},
     });
     controller.refreshAvailability({'p9': fresh});
 
-    expect(controller.state.map((e) => e.unitPrice), [1017.5, 2035]);
+    expect(controller.state.map((e) => e.unitPrice), [1100, 2200]);
     expect(controller.state.every((e) => e.stockAvailable == 2), isTrue);
   });
 }

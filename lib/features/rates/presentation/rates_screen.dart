@@ -128,7 +128,9 @@ class _RatesScreenState extends ConsumerState<RatesScreen> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                updated == null ? 'Updated daily from IBJA market rates' : 'Updated ${_fmtDay(updated, _dayFull)} · IBJA rates',
+                updated == null
+                    ? 'Updated daily from The Jewellers and Diamond Traders Association - Madras market rates'
+                    : 'Updated ${_fmtDay(updated, _dayFull)} · Jewellers and Diamond Traders Association - Madras',
                 style: const TextStyle(fontSize: 12.5, color: Kv.muted),
               ),
             ),
