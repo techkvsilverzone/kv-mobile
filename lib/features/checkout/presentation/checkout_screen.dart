@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/auth/auth_session.dart';
 import '../../../core/config/env.dart';
 import '../../../core/format/currency.dart';
@@ -311,7 +312,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     if (duplicate) return;
     try {
       await ref.read(addressListProvider.notifier).add(address);
-    } catch (_) {}
+    } catch (e) {
+      // The checkout screen has closed by now; the root navigator outlives it.
+      final ctx = rootNavigatorKey.currentContext;
+      if (ctx != null && ctx.mounted) {
+        showKvToast(ctx, "Couldn't save this address to your account",
+            message: '${e is ApiException ? '${e.message} ' : ''}Your order is not affected.', error: true);
+      }
+    }
   }
 
   Future<void> _onPaymentSuccess(PaymentSuccessResponse response) async {
